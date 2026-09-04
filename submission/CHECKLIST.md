@@ -7,7 +7,9 @@
 - [x] Audio silence, scene-change, and transcript evidence in local engine.
 - [x] Non-destructive better-cut preview.
 - [x] Auditable plan export and deterministic MP4 render.
-- [x] Unit tests and production build.
+- [x] Official YouTube Analytics response adapter and external vRetention benchmark harness.
+- [x] Real narrated 1080p media compatibility audit.
+- [x] 18 automated tests and production build.
 - [x] Public deployment URL: https://retentiondna.advikmjevoor.chatgpt.site
 - [x] Public source repository URL: https://github.com/jozai193/retentiondna
 

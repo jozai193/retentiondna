@@ -5,7 +5,7 @@ RetentionDNA turns audience-retention evidence into concrete video edits. It ali
 **Live demo:** https://retentiondna.advikmjevoor.chatgpt.site  
 **Narrated walkthrough:** [download the public 1080p demo](https://github.com/jozai193/retentiondna/releases/download/v0.1.0-hackathon/retentiondna-demo.mp4)
 
-**Judge sample result:** RetentionDNA aligns a 30.5-point audience drop at 00:25 with 7.022 seconds of measured silence, three nearby scene transitions, and repeated setup language. It recommends a bounded 12.0–28.022 second repair and renders the 100.021-second draft to an 83.999-second better cut.
+**Synthetic smoke-test result:** RetentionDNA aligns a deliberately generated 30.5-point drop at 00:25 with 7.022 seconds of measured silence, three nearby scene transitions, and repeated setup language. It recommends a bounded 12.0–28.022 second repair and renders the 100.021-second draft to an 83.999-second better cut. This proves timeline alignment and deterministic rendering, not universal recommendation accuracy.
 
 ## Product contract
 
@@ -90,6 +90,8 @@ python -B -m unittest discover -s engine -p "test_*.py"
 npm run build
 ```
 
+See [VALIDATION.md](VALIDATION.md) for the real YouTube heat-map benchmark, real narrated-media audit, official Analytics report adapter, and the exact boundary between compatibility evidence and outcome validation.
+
 ## Submission artifacts
 
 - `submission/retentiondna-demo.mp4` — narrated 1080p demo (1:56.6)
@@ -111,4 +113,4 @@ npm run build
 
 - The browser performs curve analysis and synchronized transcript review. The local engine adds real silence, scene-change, speech-pace, filler, and repetition evidence.
 - The web preview currently stages remove edits. The renderer supports safe remove operations; payoff promotion is represented in analysis but is not auto-rendered yet.
-- Direct YouTube OAuth is a stretch goal. CSV import keeps the core demo reliable and avoids asking judges for channel access.
+- The official YouTube Analytics response adapter is implemented and tested. OAuth consent and live channel retrieval remain pending until a channel owner can authorize access; CSV import keeps the core demo reliable in the meantime.

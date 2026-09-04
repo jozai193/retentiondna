@@ -505,6 +505,11 @@ export function RetentionWorkspace() {
               <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/55 px-2.5 py-1.5 font-mono text-xs text-white/80 backdrop-blur">
                 {sourceName} · {formatTime(duration)}
               </div>
+              {videoUrl.startsWith('/demo/') && cutMode === 'original' && (
+                <div className="absolute right-4 top-4 rounded-full border border-amber-300/25 bg-amber-950/85 px-3 py-1.5 text-xs text-amber-100 backdrop-blur">
+                  Synthetic smoke test · alignment only
+                </div>
+              )}
               {cutMode === 'better' && (
                 <div className="absolute right-4 top-4 flex items-center gap-2 rounded-full border border-primary/25 bg-[#15200f]/90 px-3 py-1.5 text-xs text-primary">
                   <Zap className="h-3.5 w-3.5" /> Edit preview active
@@ -675,7 +680,7 @@ export function RetentionWorkspace() {
                     Better-cut preview skips {formatTime(selected.repair.start)}
                     –{formatTime(selected.repair.end)}.{' '}
                     {videoUrl.startsWith('/demo/')
-                      ? 'Download the verified render or export its deterministic edit plan.'
+                      ? 'Download the verified synthetic render or export its deterministic edit plan.'
                       : 'Export the deterministic edit plan for rendering.'}
                   </p>
                 </div>
@@ -686,7 +691,7 @@ export function RetentionWorkspace() {
                   download="retentiondna-better-cut.mp4"
                   className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/80"
                 >
-                  <Film className="h-4 w-4" /> Download rendered sample
+                  <Film className="h-4 w-4" /> Download synthetic render
                 </a>
               )}
               <Button

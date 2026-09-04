@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "file": "submission\\retentiondna-demo.mp4",
+      "durationSeconds": 116.6,
+      "container": "mov,mp4,m4a,3gp,3g2,mj2",
+      "video": {
+        "codec": "h264",
+        "width": 1920,
+        "height": 1080
+      },
+      "audio": {
+        "codec": "aac",
+        "channels": 1,
+        "sampleRate": "96000"
+      },
+      "evidence": {
+        "silences": 11,
+        "sceneChanges": 0,
+        "longestSilenceSeconds": 0.878
+      },
+      "compatible": true
+    }
+  ]
+}
