@@ -39,3 +39,6 @@ next-env.d.ts
 /.playwright-cli/
 /.vinext-stale-*/
 /output/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo

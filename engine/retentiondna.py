@@ -57,11 +57,15 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
         raise ValueError("expected time/timestamp and retention/audienceWatchRatio columns")
 
     parsed = [Point(parse_time(row[time_key]), parse_number(row[retention_key])) for row in rows]
-    normalized_time = parsed[-1].time <= 1 and any(0 < point.time < 1 for point in parsed)
+    if any(point.time < 0 for point in parsed):
+        raise ValueError("retention timestamps cannot be negative")
+    if any(point.retention < 0 for point in parsed):
+        raise ValueError("retention values cannot be negative")
+    normalized_time = max(point.time for point in parsed) <= 1 and any(0 < point.time < 1 for point in parsed)
     if normalized_time and duration is None:
         raise ValueError("elapsedVideoTimeRatio input requires a video duration")
 
-    return sorted(
+    points = sorted(
         [
             Point(
                 point.time * duration if normalized_time and duration else point.time,
@@ -71,6 +75,11 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
         ],
         key=lambda point: point.time,
     )
+    if any(current.time <= previous.time for previous, current in zip(points, points[1:])):
+        raise ValueError("retention timestamps must be strictly increasing")
+    if duration is not None and points[-1].time > duration + 0.1:
+        raise ValueError("retention timestamps exceed the source video duration")
+    return points
 
 
 def detect_signals(points: list[Point]) -> list[Signal]:
@@ -102,6 +111,8 @@ def detect_silences(video: Path, noise: str = "-38dB", minimum_duration: float =
     """Return real silent intervals reported by FFmpeg's silencedetect filter."""
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg is required to inspect audio evidence")
+    if "audio" not in probe_stream_types(video):
+        return []
     completed = subprocess.run(
         [
             "ffmpeg", "-hide_banner", "-nostats", "-i", str(video), "-vn",
@@ -146,9 +157,18 @@ def transcript_features(items: list[dict]) -> list[dict]:
     filler_words = {"actually", "basically", "just", "like", "really", "so", "well"}
     result: list[dict] = []
     previous_tokens: set[str] = set()
-    for item in items:
-        start, end = float(item.get("start", 0)), float(item.get("end", 0))
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"transcript segment {index + 1} must be an object")
+        try:
+            start, end = float(item.get("start", 0)), float(item.get("end", 0))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"transcript segment {index + 1} needs numeric start and end timestamps") from error
         text = str(item.get("text", "")).strip()
+        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
+            raise ValueError(f"transcript segment {index + 1} has an unsafe time interval")
+        if not text:
+            raise ValueError(f"transcript segment {index + 1} needs non-empty text")
         tokens = re.findall(r"[a-z']+", text.lower())
         token_set = set(tokens)
         union = token_set | previous_tokens
@@ -261,8 +281,19 @@ def recommend_removal(signal: Signal, nearby_transcript: list[dict], silences: l
 def render(video: Path, plan_path: Path, output: Path) -> None:
     if not shutil.which("ffmpeg"):
         raise RuntimeError("ffmpeg is required to render an edit plan")
+    if not video.is_file():
+        raise ValueError(f"source video does not exist: {video}")
+    if video.resolve() == output.resolve():
+        raise ValueError("output path must be different from the source video")
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    removes = [operation for operation in plan.get("operations", []) if operation.get("action") == "remove"]
+    if not isinstance(plan, dict):
+        raise ValueError("edit plan must be a JSON object")
+    if plan.get("schema") != "retentiondna.edit-plan.v1":
+        raise ValueError("unsupported or missing edit-plan schema")
+    operations = plan.get("operations", [])
+    if not isinstance(operations, list) or any(not isinstance(operation, dict) for operation in operations):
+        raise ValueError("edit-plan operations must be an array of objects")
+    removes = [operation for operation in operations if operation.get("action") == "remove"]
     if not removes:
         shutil.copy2(video, output)
         return
@@ -281,32 +312,45 @@ def render(video: Path, plan_path: Path, output: Path) -> None:
     if not keeps:
         raise ValueError("edit plan removes the entire source video")
 
+    has_audio = "audio" in probe_stream_types(video)
     filters = []
     concat_inputs = []
     for index, (start, end) in enumerate(keeps):
         filters.append(f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{index}]")
-        filters.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{index}]")
-        concat_inputs.append(f"[v{index}][a{index}]")
-    filters.append("".join(concat_inputs) + f"concat=n={len(keeps)}:v=1:a=1[outv][outa]")
+        if has_audio:
+            filters.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{index}]")
+            concat_inputs.append(f"[v{index}][a{index}]")
+        else:
+            concat_inputs.append(f"[v{index}]")
+    filters.append(
+        "".join(concat_inputs)
+        + (f"concat=n={len(keeps)}:v=1:a=1[outv][outa]" if has_audio else f"concat=n={len(keeps)}:v=1:a=0[outv]")
+    )
 
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(video),
-        "-filter_complex", ";".join(filters), "-map", "[outv]", "-map", "[outa]",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac", "-movflags", "+faststart", str(output),
+        "-filter_complex", ";".join(filters), "-map", "[outv]",
     ]
+    if has_audio:
+        command.extend(["-map", "[outa]"])
+    command.extend(["-c:v", "libx264", "-preset", "medium", "-crf", "20"])
+    if has_audio:
+        command.extend(["-c:a", "aac"])
+    command.extend(["-movflags", "+faststart", str(output)])
     subprocess.run(command, check=True)
 
 
 def validate_removals(removes: list[dict], duration: float) -> list[dict]:
-    validated: list[dict] = []
-    for operation in non_overlapping_removals(removes):
+    parsed: list[dict] = []
+    for operation in removes:
         try:
             start, end = float(operation["start"]), float(operation["end"])
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError("remove operations need numeric start and end timestamps") from error
         if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start or end > duration:
             raise ValueError(f"unsafe remove interval {start:g}-{end:g} for {duration:g}s source")
-        validated.append(operation)
+        parsed.append({**operation, "start": start, "end": end})
+    validated = non_overlapping_removals(parsed)
     removed_duration = sum(float(item["end"]) - float(item["start"]) for item in validated)
     if removed_duration > duration * 0.35:
         raise ValueError("edit plan removes more than 35% of the source; manual review required")
@@ -321,6 +365,23 @@ def probe_duration(video: Path) -> float:
         check=True, capture_output=True, text=True,
     )
     return float(completed.stdout.strip())
+
+
+def probe_stream_types(video: Path) -> set[str]:
+    """Return the source stream types without assuming that audio exists."""
+    if not shutil.which("ffprobe"):
+        raise RuntimeError("ffprobe is required to inspect the source video")
+    completed = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "json", str(video)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(completed.stdout)
+    stream_types = {stream.get("codec_type") for stream in payload.get("streams", [])}
+    if "video" not in stream_types:
+        raise ValueError("source file does not contain a video stream")
+    return {stream_type for stream_type in stream_types if isinstance(stream_type, str)}
 
 
 def non_overlapping_removals(operations: Iterable[dict]) -> list[dict]:
@@ -339,8 +400,12 @@ def parse_time(value: str) -> float:
         total = 0.0
         for part in cleaned.split(":"):
             total = total * 60 + float(part)
-        return total
-    return float(cleaned.rstrip("%"))
+        number = total
+    else:
+        number = float(cleaned.rstrip("%"))
+    if not math.isfinite(number):
+        raise ValueError("retention timestamps must be finite")
+    return number
 
 
 def parse_number(value: str) -> float:

@@ -24,8 +24,8 @@ export type RetentionSignal = {
 };
 
 export const SAMPLE_RETENTION: RetentionPoint[] = [
-  100, 98, 96, 93, 89, 70, 51, 47, 45, 48, 52, 49, 46, 43, 40, 52, 58, 52,
-  47, 43, 40,
+  100, 98, 96, 93, 89, 70, 51, 47, 45, 48, 52, 49, 46, 43, 40, 52, 58, 52, 47,
+  43, 40,
 ].map((retention, index) => ({ time: index * 5, retention }));
 
 export function parseRetentionCsv(
@@ -74,16 +74,19 @@ export function parseRetentionCsv(
   if (
     raw.some(
       (point) =>
-        !Number.isFinite(point.time) || !Number.isFinite(point.retention),
+        !Number.isFinite(point.time) ||
+        !Number.isFinite(point.retention) ||
+        point.time < 0 ||
+        point.retention < 0,
     )
   ) {
     throw new Error(
-      'Some rows contain an invalid timestamp or retention value.',
+      'Timestamps and retention values must be finite, non-negative numbers.',
     );
   }
 
   const looksNormalized =
-    raw.at(-1)!.time <= 1 &&
+    Math.max(...raw.map((point) => point.time)) <= 1 &&
     raw.some((point) => point.time > 0 && point.time < 1);
   if (looksNormalized && !duration) {
     throw new Error(
@@ -91,13 +94,24 @@ export function parseRetentionCsv(
     );
   }
 
-  return raw
+  const points = raw
     .map((point) => ({
       time: looksNormalized ? point.time * (duration ?? 0) : point.time,
       retention:
         point.retention <= 1.5 ? point.retention * 100 : point.retention,
     }))
     .sort((a, b) => a.time - b.time);
+  if (
+    points.some(
+      (point, index) => index > 0 && point.time <= points[index - 1].time,
+    )
+  ) {
+    throw new Error('Retention timestamps must be strictly increasing.');
+  }
+  if (duration && points.at(-1)!.time > duration + 0.1) {
+    throw new Error('Retention timestamps exceed the selected video duration.');
+  }
+  return points;
 }
 
 export function detectRetentionSignals(
@@ -105,6 +119,8 @@ export function detectRetentionSignals(
 ): RetentionSignal[] {
   if (points.length < 4) return [];
   const candidates: RetentionSignal[] = [];
+  const measuredDuration = Math.max(0, points.at(-1)!.time - points[0].time);
+  const maximumRepairDuration = Math.max(2, measuredDuration * 0.3);
 
   for (let index = 2; index < points.length - 1; index += 1) {
     const before = average(
@@ -121,7 +137,13 @@ export function detectRetentionSignals(
 
     if (delta <= -7)
       candidates.push(
-        makeSignal('dip', points[index], points[index + 1], delta),
+        makeSignal(
+          'dip',
+          points[index],
+          points[index + 1],
+          delta,
+          maximumRepairDuration,
+        ),
       );
     if (delta >= 7)
       candidates.push(
@@ -180,11 +202,12 @@ function makeSignal(
   point: RetentionPoint,
   next: RetentionPoint,
   delta: number,
+  maximumRepairDuration = Number.POSITIVE_INFINITY,
 ): RetentionSignal {
   const severity = Math.abs(delta) >= 13 ? 'high' : 'medium';
   const window = Math.max(6, Math.min(18, next.time - point.time + 8));
-  const start = Math.max(0, point.time - window);
   const end = point.time + 3;
+  const start = Math.max(0, point.time - window, end - maximumRepairDuration);
 
   if (type === 'spike') {
     return {

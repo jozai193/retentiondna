@@ -151,8 +151,15 @@ export function RetentionWorkspace() {
     [selected.time, transcriptLines],
   );
   const evidence = useMemo(
-    () => evidenceFor(selected, videoUrl.startsWith('/demo/'), transcript.length),
+    () =>
+      evidenceFor(selected, videoUrl.startsWith('/demo/'), transcript.length),
     [selected, videoUrl, transcript.length],
+  );
+  const checkpointPoint = useMemo(
+    () =>
+      points.find((point) => point.time >= Math.min(30, duration)) ??
+      points.at(-1) ?? { time: 0, retention: 0 },
+    [duration, points],
   );
 
   useEffect(() => {
@@ -207,7 +214,6 @@ export function RetentionWorkspace() {
   function onVideoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     setVideoFile(file);
-    if (file) setSourceName(file.name);
   }
 
   async function onCsvChange(event: ChangeEvent<HTMLInputElement>) {
@@ -229,8 +235,9 @@ export function RetentionWorkspace() {
     }
     setStatus('analyzing');
     setProgress(14);
+    let objectUrl = '';
     try {
-      const objectUrl = URL.createObjectURL(videoFile);
+      objectUrl = URL.createObjectURL(videoFile);
       const videoDuration = await readVideoDuration(objectUrl);
       setProgress(42);
       const nextPoints = parseRetentionCsv(csvText, videoDuration);
@@ -247,6 +254,7 @@ export function RetentionWorkspace() {
       setSignals(nextSignals);
       setSelectedId(strongestSignal(nextSignals).id);
       setDuration(videoDuration);
+      setSourceName(videoFile.name);
       setTranscriptLines(nextTranscript);
       setCutMode('original');
       setVideoUrl((current) => {
@@ -257,6 +265,7 @@ export function RetentionWorkspace() {
       setTimeout(() => setStatus('ready'), 350);
       setUploadOpen(false);
     } catch (caught) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       setError(
         caught instanceof Error
           ? caught.message
@@ -513,14 +522,9 @@ export function RetentionWorkspace() {
                 <div className="flex gap-4 text-xs text-muted-foreground">
                   <span>
                     <b className="mr-1 text-primary">
-                      {Math.round(
-                        points.find((point) => point.time >= 30)?.retention ??
-                          points[0]?.retention ??
-                          0,
-                      )}
-                      %
+                      {Math.round(checkpointPoint.retention)}%
                     </b>{' '}
-                    at 0:30
+                    at {formatTime(checkpointPoint.time)}
                   </span>
                   <span>
                     <b className="mr-1 text-[#ff7d69]">
@@ -593,7 +597,10 @@ export function RetentionWorkspace() {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {selected.explanation}
           </p>
-          <div className="mt-5 grid grid-cols-3 gap-2" aria-label="Aligned evidence">
+          <div
+            className="mt-5 grid grid-cols-3 gap-2"
+            aria-label="Aligned evidence"
+          >
             {evidence.map((item) => (
               <EvidenceCue key={item.label} {...item} />
             ))}
@@ -690,7 +697,7 @@ export function RetentionWorkspace() {
               <span className="font-mono text-primary">timeline aligned</span>
             </div>
           </div>
-          <p className="mt-6 text-xs leading-5 text-white/35">
+          <p className="mt-6 text-xs leading-5 text-muted-foreground">
             RetentionDNA suggests evidence-informed edits. It never guarantees
             future performance.
           </p>
@@ -876,7 +883,8 @@ function EvidenceCue({
   value: string;
   kind: 'curve' | 'audio' | 'visual';
 }) {
-  const Icon = kind === 'audio' ? AudioLines : kind === 'visual' ? ScanLine : Activity;
+  const Icon =
+    kind === 'audio' ? AudioLines : kind === 'visual' ? ScanLine : Activity;
   return (
     <div className="rounded-lg border border-white/8 bg-white/[.025] p-3">
       <Icon className="h-4 w-4 text-primary" />
@@ -945,20 +953,23 @@ function transcriptAround(
   return lines.slice(start, start + 3);
 }
 function parseTranscriptJson(text: string): TranscriptLine[] {
-  const parsed = JSON.parse(text) as Array<{
-    start?: unknown;
-    end?: unknown;
-    text?: unknown;
-  }>;
+  const parsed: unknown = JSON.parse(text);
   if (!Array.isArray(parsed))
     throw new Error('Transcript JSON must be an array.');
-  const lines = parsed.map((item) => {
-    if (typeof item.text !== 'string')
+  const lines = parsed.map((item: unknown) => {
+    if (!item || typeof item !== 'object')
+      throw new Error('Each transcript item must be an object.');
+    const candidate = item as {
+      start?: unknown;
+      end?: unknown;
+      text?: unknown;
+    };
+    if (typeof candidate.text !== 'string')
       throw new Error('Each transcript item needs text.');
     return {
-      time: Number(item.start),
-      end: Number(item.end),
-      text: item.text,
+      time: Number(candidate.start),
+      end: Number(candidate.end),
+      text: candidate.text,
     };
   });
   if (
@@ -966,6 +977,8 @@ function parseTranscriptJson(text: string): TranscriptLine[] {
       (line) =>
         !Number.isFinite(line.time) ||
         !Number.isFinite(line.end) ||
+        line.time < 0 ||
+        line.end <= line.time ||
         !line.text.trim(),
     )
   )
@@ -978,7 +991,11 @@ function readVideoDuration(url: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
-    video.onloadedmetadata = () => resolve(video.duration);
+    video.onloadedmetadata = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0)
+        resolve(video.duration);
+      else reject(new Error('The selected video has an invalid duration.'));
+    };
     video.onerror = () =>
       reject(new Error('The selected video could not be read.'));
     video.src = url;
