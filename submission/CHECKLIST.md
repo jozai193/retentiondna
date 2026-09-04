@@ -8,14 +8,14 @@
 - [x] Non-destructive better-cut preview.
 - [x] Auditable plan export and deterministic MP4 render.
 - [x] Unit tests and production build.
-- [ ] Public deployment URL.
-- [ ] Public source repository URL.
+- [x] Public deployment URL: https://retentiondna.advikmjevoor.chatgpt.site
+- [x] Public source repository URL: https://github.com/jozai193/retentiondna
 
 ## Demo video
 
-- [ ] Record the 100-second scripted walkthrough.
-- [ ] Verify text is readable at 1080p.
-- [ ] Verify before/after jump is visible and audio is clean.
+- [x] Record the narrated walkthrough (1:56.6).
+- [x] Verify text is readable at 1080p.
+- [x] Verify before/after jump is visible and audio is clean.
 - [ ] Upload to YouTube or another Devpost-compatible public host.
 - [ ] Add the public video URL to Devpost and this repository.
 

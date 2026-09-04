@@ -54,6 +54,7 @@ React, TypeScript, Tailwind CSS, shadcn/ui, Python, FFmpeg, FFprobe, SVG, WebMCP
 
 ## Links to add before submission
 
-- Live demo: `[pending deployment]`
-- Source code: `[pending public repository]`
-- Demo video: `[pending upload]`
+- Live demo: https://retentiondna.advikmjevoor.chatgpt.site
+- Source code: https://github.com/jozai193/retentiondna
+- Public demo file: https://github.com/jozai193/retentiondna/raw/refs/heads/main/submission/retentiondna-demo.mp4
+- Devpost-compatible video host: `[pending YouTube or Vimeo upload]`
