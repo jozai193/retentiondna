@@ -3,7 +3,7 @@
 RetentionDNA turns audience-retention evidence into concrete video edits. It aligns a retention curve to the source timeline, detects statistically meaningful dips and spikes, explains the editing pattern around each signal, previews a safer cut, and exports an auditable edit plan that can be rendered with FFmpeg.
 
 **Live demo:** https://retentiondna.advikmjevoor.chatgpt.site  
-**Narrated walkthrough:** [submission/retentiondna-demo.mp4](submission/retentiondna-demo.mp4)
+**Narrated walkthrough:** [download the public 1080p demo](https://github.com/jozai193/retentiondna/releases/download/v0.1.0-hackathon/retentiondna-demo.mp4)
 
 **Judge sample result:** RetentionDNA aligns a 30.5-point audience drop at 00:25 with 7.022 seconds of measured silence, three nearby scene transitions, and repeated setup language. It recommends a bounded 12.0–28.022 second repair and renders the 100.021-second draft to an 83.999-second better cut.
 

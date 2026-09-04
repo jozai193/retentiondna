@@ -16,6 +16,7 @@
 - [x] Record the narrated walkthrough (1:56.6).
 - [x] Verify text is readable at 1080p.
 - [x] Verify before/after jump is visible and audio is clean.
+- [x] Publish the MP4 as a public GitHub release asset.
 - [ ] Upload to YouTube or another Devpost-compatible public host.
 - [ ] Add the public video URL to Devpost and this repository.
 
