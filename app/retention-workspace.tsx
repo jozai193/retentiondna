@@ -673,14 +673,25 @@ export function RetentionWorkspace() {
                   <p className="text-sm font-medium">Repair staged</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     Better-cut preview skips {formatTime(selected.repair.start)}
-                    –{formatTime(selected.repair.end)}. Export the deterministic
-                    edit plan for rendering.
+                    –{formatTime(selected.repair.end)}.{' '}
+                    {videoUrl.startsWith('/demo/')
+                      ? 'Download the verified render or export its deterministic edit plan.'
+                      : 'Export the deterministic edit plan for rendering.'}
                   </p>
                 </div>
               </div>
+              {videoUrl.startsWith('/demo/') && (
+                <a
+                  href="/demo/retentiondna-better-cut.mp4"
+                  download="retentiondna-better-cut.mp4"
+                  className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/80"
+                >
+                  <Film className="h-4 w-4" /> Download rendered sample
+                </a>
+              )}
               <Button
                 variant="outline"
-                className="mt-3 w-full border-primary/20 bg-primary/5 text-primary"
+                className="mt-2 w-full border-primary/20 bg-primary/5 text-primary"
                 onClick={downloadPlan}
               >
                 <Download /> Export edit plan
