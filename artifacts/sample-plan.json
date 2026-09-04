@@ -1,0 +1,104 @@
+{
+  "schema": "retentiondna.edit-plan.v1",
+  "source": "public\\demo\\retentiondna-sample.mp4",
+  "evidence": [
+    {
+      "kind": "dip",
+      "time": 30.0,
+      "delta": -7.5,
+      "retention": 86.0,
+      "severity": "medium",
+      "transcript": [
+        {
+          "start": 18,
+          "end": 47,
+          "text": "Before we begin, let me explain how I discovered this workflow and why my old process never worked."
+        }
+      ]
+    },
+    {
+      "kind": "dip",
+      "time": 40.0,
+      "delta": -29.0,
+      "retention": 61.0,
+      "severity": "high",
+      "transcript": [
+        {
+          "start": 18,
+          "end": 47,
+          "text": "Before we begin, let me explain how I discovered this workflow and why my old process never worked."
+        }
+      ]
+    },
+    {
+      "kind": "dip",
+      "time": 50.0,
+      "delta": -11.5,
+      "retention": 43.0,
+      "severity": "medium",
+      "transcript": [
+        {
+          "start": 18,
+          "end": 47,
+          "text": "Before we begin, let me explain how I discovered this workflow and why my old process never worked."
+        },
+        {
+          "start": 47,
+          "end": 71,
+          "text": "First, capture every idea in one place and score it by audience intent."
+        }
+      ]
+    },
+    {
+      "kind": "spike",
+      "time": 65.0,
+      "delta": 9.5,
+      "retention": 53.0,
+      "severity": "medium",
+      "transcript": [
+        {
+          "start": 47,
+          "end": 71,
+          "text": "First, capture every idea in one place and score it by audience intent."
+        }
+      ]
+    },
+    {
+      "kind": "dip",
+      "time": 80.0,
+      "delta": -7.5,
+      "retention": 48.0,
+      "severity": "medium",
+      "transcript": [
+        {
+          "start": 71,
+          "end": 108,
+          "text": "Then group related ideas into a sequence so each upload naturally creates demand for the next."
+        }
+      ]
+    },
+    {
+      "kind": "dip",
+      "time": 90.0,
+      "delta": -7.5,
+      "retention": 44.0,
+      "severity": "medium",
+      "transcript": [
+        {
+          "start": 71,
+          "end": 108,
+          "text": "Then group related ideas into a sequence so each upload naturally creates demand for the next."
+        }
+      ]
+    }
+  ],
+  "operations": [
+    {
+      "action": "remove",
+      "start": 22.0,
+      "end": 38.0,
+      "reason": "strongest measured retention decline"
+    }
+  ],
+  "disclaimer": "Evidence-informed edits do not guarantee future audience retention."
+}
