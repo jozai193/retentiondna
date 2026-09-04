@@ -8,6 +8,7 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 export const metadata: Metadata = {
   title: 'RetentionDNA — Audience-informed video editing',
   description: 'Learn where viewers leave, then improve the next cut with evidence-backed edits.',
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({

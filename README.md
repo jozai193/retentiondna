@@ -2,6 +2,8 @@
 
 RetentionDNA turns audience-retention evidence into concrete video edits. It aligns a retention curve to the source timeline, detects statistically meaningful dips and spikes, explains the editing pattern around each signal, previews a safer cut, and exports an auditable edit plan that can be rendered with FFmpeg.
 
+**Judge sample result:** RetentionDNA aligns a 30.5-point audience drop at 00:25 with 7.022 seconds of measured silence, three nearby scene transitions, and repeated setup language. It recommends a bounded 12.0–28.022 second repair and renders the 100.021-second draft to an 83.999-second better cut.
+
 ## Product contract
 
 The hackathon demo proves one complete loop:
@@ -29,8 +31,11 @@ Browser workspace
                   ▼
 Local rendering engine (Python standard library + FFmpeg)
   ├─ validate video duration with ffprobe
-  ├─ align transcript evidence
+  ├─ detect silence and scene changes with FFmpeg
+  ├─ measure transcript pace, filler, and repetition
+  ├─ align multimodal evidence to each retention signal
   ├─ merge overlapping safe-remove operations
+  ├─ reject invalid or >35%-destructive edit plans
   ├─ construct a deterministic FFmpeg filter graph
   └─ render a new MP4 while preserving the source
 ```
@@ -67,6 +72,12 @@ python -B engine/retentiondna.py render `
   --out artifacts/sample-better-cut.mp4
 ```
 
+The judge sample is reproducible:
+
+```powershell
+python -B engine/generate_sample.py
+```
+
 FFmpeg and ffprobe must be on `PATH`. Rendering uses argument arrays and validated numeric timestamps; generated text is never executed as a shell command.
 
 ## Verify
@@ -75,6 +86,15 @@ FFmpeg and ffprobe must be on `PATH`. Rendering uses argument arrays and validat
 python -B -m unittest discover -s engine -p "test_*.py"
 npm run build
 ```
+
+## Submission artifacts
+
+- `submission/retentiondna-demo.mp4` — narrated 1080p demo (1:56.6)
+- `submission/retentiondna-workspace.png` — primary judge screenshot
+- `submission/retentiondna-better-cut.png` — staged repair screenshot
+- `submission/DEVPOST.md` — ready-to-paste project story
+- `submission/DEMO_SCRIPT.md` — shot list and narration structure
+- `submission/CHECKLIST.md` — final publication and eligibility checks
 
 ## Implementation milestones
 
@@ -86,6 +106,6 @@ npm run build
 
 ## Honest MVP boundaries
 
-- The browser infers likely editing problems from retention-curve shape; transcript-aware diagnosis is available to the local engine when timestamped transcript JSON is provided.
+- The browser performs curve analysis and synchronized transcript review. The local engine adds real silence, scene-change, speech-pace, filler, and repetition evidence.
 - The web preview currently stages remove edits. The renderer supports safe remove operations; payoff promotion is represented in analysis but is not auto-rendered yet.
 - Direct YouTube OAuth is a stretch goal. CSV import keeps the core demo reliable and avoids asking judges for channel access.

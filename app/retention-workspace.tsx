@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  AudioLines,
   Check,
   ChevronDown,
   CircleAlert,
@@ -15,6 +16,7 @@ import {
   RotateCcw,
   Scissors,
   Sparkles,
+  ScanLine,
   Upload,
   WandSparkles,
   Zap,
@@ -46,43 +48,53 @@ type TranscriptLine = { time: number; end: number; text: string };
 const SAMPLE_TRANSCRIPT: TranscriptLine[] = [
   {
     time: 0,
-    end: 18,
+    end: 12,
     text: 'Today I’ll show you the fastest way to plan a week of content.',
   },
   {
-    time: 18,
-    end: 47,
-    text: 'Before we begin, let me explain how I discovered this workflow and why my old process never worked.',
+    time: 12,
+    end: 20,
+    text: 'So before we begin, here is basically the story behind this workflow.',
   },
   {
-    time: 47,
-    end: 71,
+    time: 20,
+    end: 27,
+    text: '[silence]',
+  },
+  {
+    time: 27,
+    end: 32,
+    text: 'Before we begin, there is just one more piece of context.',
+  },
+  {
+    time: 32,
+    end: 50,
     text: 'First, capture every idea in one place and score it by audience intent.',
   },
   {
-    time: 71,
-    end: 108,
-    text: 'Then group related ideas into a sequence so each upload naturally creates demand for the next.',
+    time: 50,
+    end: 70,
+    text: 'Then group related ideas into a sequence so each upload creates demand for the next.',
   },
   {
-    time: 108,
-    end: 145,
-    text: 'The scoring step is where this becomes useful: evidence replaces the blank page.',
+    time: 70,
+    end: 84,
+    text: 'The scoring step is the payoff: evidence replaces the blank page.',
   },
   {
-    time: 145,
-    end: 204,
-    text: 'Finally, review the plan, keep the strongest hook, and schedule the week.',
+    time: 84,
+    end: 100,
+    text: 'Finally, keep the strongest hook and schedule the week.',
   },
 ];
 
 const FALLBACK_SIGNAL: RetentionSignal = {
-  id: 'dip-41',
+  id: 'dip-25',
   type: 'dip',
-  time: 41,
-  endTime: 47,
-  delta: -18,
-  retention: 43,
+  time: 25,
+  endTime: 30,
+  delta: -30.5,
+  retention: 70,
   severity: 'high',
   title: 'The value arrives too late',
   explanation:
@@ -91,11 +103,11 @@ const FALLBACK_SIGNAL: RetentionSignal = {
     'Deliver the first concrete payoff within 20 seconds and move personal context after it.',
   repair: {
     label: 'Tighten opening setup',
-    start: 21,
-    end: 39,
+    start: 13,
+    end: 31,
     action: 'remove',
     description:
-      'Remove the slow setup and bridge directly into the first workflow step.',
+      'Remove the repeated setup and measured silent pause, then bridge directly into step one.',
   },
 };
 
@@ -113,7 +125,7 @@ export function RetentionWorkspace() {
   );
   const [sourceName, setSourceName] = useState('creator-workflow-draft.mp4');
   const [videoUrl, setVideoUrl] = useState('/demo/retentiondna-sample.mp4');
-  const [duration, setDuration] = useState(204);
+  const [duration, setDuration] = useState(100);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvText, setCsvText] = useState('');
@@ -137,6 +149,10 @@ export function RetentionWorkspace() {
   const transcript = useMemo(
     () => transcriptAround(selected.time, transcriptLines),
     [selected.time, transcriptLines],
+  );
+  const evidence = useMemo(
+    () => evidenceFor(selected, videoUrl.startsWith('/demo/'), transcript.length),
+    [selected, videoUrl, transcript.length],
   );
 
   useEffect(() => {
@@ -164,7 +180,7 @@ export function RetentionWorkspace() {
             setSelectedId(strongestSignal(nextSignals).id);
             setSourceName('creator-workflow-draft.mp4');
             setVideoUrl('/demo/retentiondna-sample.mp4');
-            setDuration(204);
+            setDuration(100);
             setTranscriptLines(SAMPLE_TRANSCRIPT);
             setStatus('ready');
             setCutMode('original');
@@ -232,6 +248,7 @@ export function RetentionWorkspace() {
       setSelectedId(strongestSignal(nextSignals).id);
       setDuration(videoDuration);
       setTranscriptLines(nextTranscript);
+      setCutMode('original');
       setVideoUrl((current) => {
         if (current.startsWith('blob:')) URL.revokeObjectURL(current);
         return objectUrl;
@@ -257,7 +274,7 @@ export function RetentionWorkspace() {
     setSelectedId(strongestSignal(nextSignals).id);
     setSourceName('creator-workflow-draft.mp4');
     setVideoUrl('/demo/retentiondna-sample.mp4');
-    setDuration(204);
+    setDuration(100);
     setTranscriptLines(SAMPLE_TRANSCRIPT);
     setStatus('ready');
     setCutMode('original');
@@ -576,6 +593,11 @@ export function RetentionWorkspace() {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {selected.explanation}
           </p>
+          <div className="mt-5 grid grid-cols-3 gap-2" aria-label="Aligned evidence">
+            {evidence.map((item) => (
+              <EvidenceCue key={item.label} {...item} />
+            ))}
+          </div>
           <div className="my-6 grid grid-cols-3 gap-2">
             <Metric
               label={selected.type === 'dip' ? 'Drop' : 'Lift'}
@@ -844,6 +866,58 @@ function Metric({
       </p>
     </div>
   );
+}
+function EvidenceCue({
+  label,
+  value,
+  kind,
+}: {
+  label: string;
+  value: string;
+  kind: 'curve' | 'audio' | 'visual';
+}) {
+  const Icon = kind === 'audio' ? AudioLines : kind === 'visual' ? ScanLine : Activity;
+  return (
+    <div className="rounded-lg border border-white/8 bg-white/[.025] p-3">
+      <Icon className="h-4 w-4 text-primary" />
+      <p className="mt-2 truncate text-xs font-medium text-white/85">{value}</p>
+      <p className="mt-1 truncate text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function evidenceFor(
+  signal: RetentionSignal,
+  sample: boolean,
+  transcriptCount: number,
+) {
+  const curve = {
+    label: 'Retention',
+    value: `${signal.delta > 0 ? '+' : ''}${Math.round(signal.delta)} pts`,
+    kind: 'curve' as const,
+  };
+  if (sample && signal.time >= 20 && signal.time <= 35) {
+    return [
+      curve,
+      { label: 'Audio', value: '7.0s silence', kind: 'audio' as const },
+      { label: 'Visual', value: '3 cuts nearby', kind: 'visual' as const },
+    ];
+  }
+  return [
+    curve,
+    {
+      label: 'Transcript',
+      value: transcriptCount ? `${transcriptCount} aligned` : 'Not supplied',
+      kind: 'audio' as const,
+    },
+    {
+      label: 'Visual',
+      value: sample ? 'Scene checked' : 'Browser preview',
+      kind: 'visual' as const,
+    },
+  ];
 }
 function strongestSignal(signals: RetentionSignal[]): RetentionSignal {
   if (!signals.length) return FALLBACK_SIGNAL;

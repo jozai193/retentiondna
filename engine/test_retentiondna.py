@@ -1,7 +1,15 @@
 import unittest
 from pathlib import Path
 
-from retentiondna import Point, detect_signals, load_retention, non_overlapping_removals
+from retentiondna import (
+    Point,
+    detect_signals,
+    load_retention,
+    non_overlapping_removals,
+    parse_silence_log,
+    transcript_features,
+    validate_removals,
+)
 
 
 class RetentionDnaTests(unittest.TestCase):
@@ -23,6 +31,27 @@ class RetentionDnaTests(unittest.TestCase):
         merged = non_overlapping_removals(operations)
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0]["end"], 24)
+
+    def test_parses_ffmpeg_silence_evidence(self):
+        log = "silence_start: 20.02\n silence_end: 27.11 | silence_duration: 7.09"
+        silences = parse_silence_log(log)
+        self.assertEqual((silences[0].start, silences[0].end), (20.02, 27.11))
+
+    def test_transcript_features_are_explainable(self):
+        features = transcript_features([
+            {"start": 0, "end": 10, "text": "So basically this is really useful"},
+            {"start": 10, "end": 20, "text": "This is really useful, so let us begin"},
+        ])
+        self.assertEqual(features[0]["wordsPerMinute"], 36)
+        self.assertGreater(features[1]["repetitionScore"], 0)
+
+    def test_rejects_overly_destructive_plan(self):
+        with self.assertRaisesRegex(ValueError, "more than 35%"):
+            validate_removals([{"action": "remove", "start": 0, "end": 40}], 100)
+
+    def test_rejects_invalid_timestamp(self):
+        with self.assertRaisesRegex(ValueError, "unsafe remove interval"):
+            validate_removals([{"action": "remove", "start": -1, "end": 5}], 100)
 
 
 if __name__ == "__main__":

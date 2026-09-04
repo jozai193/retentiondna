@@ -24,10 +24,9 @@ export type RetentionSignal = {
 };
 
 export const SAMPLE_RETENTION: RetentionPoint[] = [
-  100, 98, 96, 94, 92, 89, 86, 83, 80, 77, 74, 70, 65, 57, 49, 43, 41, 40, 45,
-  50, 53, 51, 48, 45, 43, 41, 39, 36, 33, 31, 30, 29, 32, 34, 33, 31, 29, 27,
-  25, 23, 21,
-].map((retention, index) => ({ time: index * 5.1, retention }));
+  100, 98, 96, 93, 89, 70, 51, 47, 45, 48, 52, 49, 46, 43, 40, 52, 58, 52,
+  47, 43, 40,
+].map((retention, index) => ({ time: index * 5, retention }));
 
 export function parseRetentionCsv(
   csv: string,
@@ -185,7 +184,7 @@ function makeSignal(
   const severity = Math.abs(delta) >= 13 ? 'high' : 'medium';
   const window = Math.max(6, Math.min(18, next.time - point.time + 8));
   const start = Math.max(0, point.time - window);
-  const end = point.time + 2;
+  const end = point.time + 3;
 
   if (type === 'spike') {
     return {

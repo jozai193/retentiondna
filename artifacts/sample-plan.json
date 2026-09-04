@@ -1,103 +1,190 @@
 {
   "schema": "retentiondna.edit-plan.v1",
   "source": "public\\demo\\retentiondna-sample.mp4",
+  "analysis": {
+    "retentionPoints": 21,
+    "silencesDetected": 1,
+    "sceneChangesDetected": 7,
+    "transcriptSegments": 8
+  },
   "evidence": [
     {
       "kind": "dip",
-      "time": 30.0,
-      "delta": -7.5,
-      "retention": 86.0,
-      "severity": "medium",
-      "transcript": [
-        {
-          "start": 18,
-          "end": 47,
-          "text": "Before we begin, let me explain how I discovered this workflow and why my old process never worked."
-        }
-      ]
-    },
-    {
-      "kind": "dip",
-      "time": 40.0,
-      "delta": -29.0,
-      "retention": 61.0,
+      "time": 25.0,
+      "delta": -30.5,
+      "retention": 70.0,
       "severity": "high",
+      "confidence": 0.98,
       "transcript": [
         {
-          "start": 18,
-          "end": 47,
-          "text": "Before we begin, let me explain how I discovered this workflow and why my old process never worked."
-        }
-      ]
-    },
-    {
-      "kind": "dip",
-      "time": 50.0,
-      "delta": -11.5,
-      "retention": 43.0,
-      "severity": "medium",
-      "transcript": [
-        {
-          "start": 18,
-          "end": 47,
-          "text": "Before we begin, let me explain how I discovered this workflow and why my old process never worked."
+          "start": 12.0,
+          "end": 20.0,
+          "text": "So before we begin, here is basically the story behind this workflow.",
+          "wordsPerMinute": 90,
+          "fillerCount": 2,
+          "repetitionScore": 0.04
         },
         {
-          "start": 47,
-          "end": 71,
-          "text": "First, capture every idea in one place and score it by audience intent."
+          "start": 20.0,
+          "end": 27.0,
+          "text": "[silence]",
+          "wordsPerMinute": 9,
+          "fillerCount": 0,
+          "repetitionScore": 0.0
+        },
+        {
+          "start": 27.0,
+          "end": 32.0,
+          "text": "Before we begin, there is just one more piece of context.",
+          "wordsPerMinute": 132,
+          "fillerCount": 1,
+          "repetitionScore": 0.0
         }
-      ]
+      ],
+      "audio": {
+        "silences": [
+          {
+            "start": 20.0,
+            "end": 27.022,
+            "duration": 7.022
+          }
+        ]
+      },
+      "visual": {
+        "sceneChanges": [
+          12.021,
+          20.021,
+          27.021
+        ],
+        "sceneChangeCount": 3
+      }
+    },
+    {
+      "kind": "dip",
+      "time": 35.0,
+      "delta": -14.5,
+      "retention": 47.0,
+      "severity": "high",
+      "confidence": 0.96,
+      "transcript": [
+        {
+          "start": 27.0,
+          "end": 32.0,
+          "text": "Before we begin, there is just one more piece of context.",
+          "wordsPerMinute": 132,
+          "fillerCount": 1,
+          "repetitionScore": 0.0
+        },
+        {
+          "start": 32.0,
+          "end": 50.0,
+          "text": "First, capture every idea in one place and score it by audience intent.",
+          "wordsPerMinute": 43,
+          "fillerCount": 0,
+          "repetitionScore": 0.04
+        }
+      ],
+      "audio": {
+        "silences": [
+          {
+            "start": 20.0,
+            "end": 27.022,
+            "duration": 7.022
+          }
+        ]
+      },
+      "visual": {
+        "sceneChanges": [
+          20.021,
+          27.021,
+          32.021
+        ],
+        "sceneChangeCount": 3
+      }
     },
     {
       "kind": "spike",
-      "time": 65.0,
-      "delta": 9.5,
-      "retention": 53.0,
-      "severity": "medium",
+      "time": 75.0,
+      "delta": 13.5,
+      "retention": 52.0,
+      "severity": "high",
+      "confidence": 0.83,
       "transcript": [
         {
-          "start": 47,
-          "end": 71,
-          "text": "First, capture every idea in one place and score it by audience intent."
-        }
-      ]
-    },
-    {
-      "kind": "dip",
-      "time": 80.0,
-      "delta": -7.5,
-      "retention": 48.0,
-      "severity": "medium",
-      "transcript": [
+          "start": 50.0,
+          "end": 70.0,
+          "text": "Then group related ideas into a sequence so each upload creates demand for the next.",
+          "wordsPerMinute": 45,
+          "fillerCount": 1,
+          "repetitionScore": 0.0
+        },
         {
-          "start": 71,
-          "end": 108,
-          "text": "Then group related ideas into a sequence so each upload naturally creates demand for the next."
+          "start": 70.0,
+          "end": 84.0,
+          "text": "The scoring step is the payoff: evidence replaces the blank page.",
+          "wordsPerMinute": 47,
+          "fillerCount": 0,
+          "repetitionScore": 0.04
         }
-      ]
+      ],
+      "audio": {
+        "silences": []
+      },
+      "visual": {
+        "sceneChanges": [
+          70.021
+        ],
+        "sceneChangeCount": 1
+      }
     },
     {
       "kind": "dip",
       "time": 90.0,
-      "delta": -7.5,
-      "retention": 44.0,
+      "delta": -10.0,
+      "retention": 47.0,
       "severity": "medium",
+      "confidence": 0.8,
       "transcript": [
         {
-          "start": 71,
-          "end": 108,
-          "text": "Then group related ideas into a sequence so each upload naturally creates demand for the next."
+          "start": 70.0,
+          "end": 84.0,
+          "text": "The scoring step is the payoff: evidence replaces the blank page.",
+          "wordsPerMinute": 47,
+          "fillerCount": 0,
+          "repetitionScore": 0.04
+        },
+        {
+          "start": 84.0,
+          "end": 100.0,
+          "text": "Finally, keep the strongest hook and schedule the week.",
+          "wordsPerMinute": 34,
+          "fillerCount": 0,
+          "repetitionScore": 0.06
         }
-      ]
+      ],
+      "audio": {
+        "silences": []
+      },
+      "visual": {
+        "sceneChanges": [
+          70.021,
+          84.021
+        ],
+        "sceneChangeCount": 2
+      }
     }
   ],
   "operations": [
     {
       "action": "remove",
-      "start": 22.0,
-      "end": 38.0,
-      "reason": "strongest measured retention decline"
+      "start": 12.0,
+      "end": 28.022,
+      "reason": "tighten repeated setup containing measured silence before the retention drop",
+      "evidenceRefs": [
+        "retention@25",
+        "audio:silence",
+        "transcript:pace-repetition"
+      ]
     }
   ],
   "disclaimer": "Evidence-informed edits do not guarantee future audience retention."
