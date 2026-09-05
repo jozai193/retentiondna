@@ -8,6 +8,7 @@ import {
   parseYouTubeAnalyticsReport,
   type SourceIdentity,
 } from './retention.ts';
+import { ACAU_CASE } from './acau-case.ts';
 import { initialWorkflowState, workflowReducer } from './workflow.ts';
 
 type GoldenCase = {
@@ -38,6 +39,17 @@ for (const fixture of goldenCases) {
     );
   });
 }
+
+void test('public ACAU case preserves the complete published curve', () => {
+  assert.equal(ACAU_CASE.points.length, 100);
+  assert.deepEqual(ACAU_CASE.points[0], { time: 26, retention: 101.44 });
+  assert.deepEqual(ACAU_CASE.points.at(-1), { time: 2605, retention: 5.53 });
+  const strongest = detectRetentionSignals(ACAU_CASE.points).sort(
+    (left, right) => Math.abs(right.delta) - Math.abs(left.delta),
+  )[0];
+  assert.equal(strongest.time, 78);
+  assert.equal(strongest.delta, -42.5);
+});
 
 void test('official YouTube Analytics JSON preserves replay ratios above one', () => {
   const report = JSON.stringify({

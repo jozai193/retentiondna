@@ -1,8 +1,12 @@
 Creators already know where viewers leave. The hard part is understanding why, and deciding what to change in the next edit. RetentionDNA closes that loop by turning audience behavior into a concrete, reviewable repair.
 
-The input is deliberately simple: a draft video, its audience-retention CSV or saved YouTube Analytics response, and an optional timestamped transcript. Files remain in the browser. The built-in sample keeps this walkthrough completely reproducible.
+The workspace opens with a real public YouTube case from ACAU, Uruguay's national film and audiovisual agency, paired with one hundred retention measurements from its official open-data catalog. RetentionDNA finds the strongest local loss at one minute eighteen and opens the real video at that exact moment.
 
-The curve immediately surfaces the strongest moments. A replay spike at one minute fifteen identifies a payoff worth promoting earlier. The largest loss happens at twenty-five seconds: a thirty-point drop before the first useful step.
+The interface keeps the evidence boundary honest. The public retention curve is measured, while transcript and automated visual evidence are marked unavailable. Because we do not own that source video, the case remains recommendation-only. Previewing, exporting, or rendering an edit requires a rights-cleared upload.
+
+The creator input is deliberately simple: a draft video, its audience-retention CSV or saved YouTube Analytics response, and an optional timestamped transcript. Files remain in the browser. A separate synthetic engineering fixture keeps the editing demonstration completely reproducible.
+
+In that fixture, a replay spike at one minute fifteen identifies a payoff worth promoting earlier. The largest loss happens at twenty-five seconds: a thirty-point drop before the first useful step.
 
 RetentionDNA does not pretend the curve proves a cause. Every card says whether evidence was measured, timestamp-aligned, or unavailable. Here, FFmpeg measures seven point zero two two seconds of silence, finds three nearby scene changes, and the transcript shows repeated setup language. The recommendation stays reviewable and duration-aware.
 

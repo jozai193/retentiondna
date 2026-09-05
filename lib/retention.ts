@@ -55,6 +55,9 @@ export function parseRetentionCsv(
       'timestamp',
       'elapsedvideotimeratio',
       'elapsed ratio',
+      'position_ratio',
+      'position_percentage',
+      'position_seconds',
       'elapsed',
     ].includes(header),
   );
@@ -62,6 +65,8 @@ export function parseRetentionCsv(
     [
       'retention',
       'audiencewatchratio',
+      'audience_ratio',
+      'audience_percentage',
       'audience retention',
       'watch ratio',
     ].includes(header),
@@ -69,23 +74,33 @@ export function parseRetentionCsv(
 
   if (timeIndex < 0 || retentionIndex < 0) {
     throw new Error(
-      'Use columns named time/timestamp and retention/audienceWatchRatio.',
+      'Use time/timestamp, YouTube Analytics, or ACAU position and audience columns.',
     );
   }
 
   const timeHeader = headers[timeIndex];
   const retentionHeader = headers[retentionIndex];
-  const normalizedTime = ['elapsedvideotimeratio', 'elapsed ratio'].includes(
-    timeHeader,
-  );
-  const ratioRetention = ['audiencewatchratio', 'watch ratio'].includes(
-    retentionHeader,
-  );
+  const normalizedTime = [
+    'elapsedvideotimeratio',
+    'elapsed ratio',
+    'position_ratio',
+    'position_percentage',
+  ].includes(timeHeader);
+  const percentageTime = timeHeader === 'position_percentage';
+  const ratioRetention = [
+    'audiencewatchratio',
+    'watch ratio',
+    'audience_ratio',
+  ].includes(retentionHeader);
 
   const raw = lines.slice(1).map((line) => {
     const cells = splitCsvLine(line);
     return {
-      time: parseTime(cells[timeIndex]?.trim() ?? '', normalizedTime),
+      time: parseTime(
+        cells[timeIndex]?.trim() ?? '',
+        normalizedTime,
+        percentageTime,
+      ),
       retention: parseRetentionValue(
         cells[retentionIndex]?.trim() ?? '',
         ratioRetention,
@@ -115,7 +130,9 @@ export function parseRetentionCsv(
 
   const points = raw
     .map((point) => ({
-      time: normalizedTime ? point.time * (duration ?? 0) : point.time,
+      time: normalizedTime
+        ? Number((point.time * (duration ?? 0)).toFixed(6))
+        : point.time,
       retention: point.retention,
     }))
     .sort((a, b) => a.time - b.time);
@@ -375,7 +392,11 @@ function makeSignal(
   };
 }
 
-function parseTime(value: string, normalized: boolean): number {
+function parseTime(
+  value: string,
+  normalized: boolean,
+  percentageHeader = false,
+): number {
   if (/^\d+(?::\d{1,2}){1,2}$/.test(value)) {
     return value
       .split(':')
@@ -383,7 +404,9 @@ function parseTime(value: string, normalized: boolean): number {
   }
   const cleaned = value.trim();
   const parsed = Number(cleaned.replace('%', ''));
-  return normalized && cleaned.endsWith('%') ? parsed / 100 : parsed;
+  return normalized && (cleaned.endsWith('%') || percentageHeader)
+    ? parsed / 100
+    : parsed;
 }
 
 function parseRetentionValue(value: string, ratioHeader: boolean): number {

@@ -26,5 +26,19 @@
     "csv": "time,retention\n0,100\n0.5,90\n1,80\n",
     "times": [0, 0.5, 1],
     "retention": [100, 90, 80]
+  },
+  {
+    "name": "ACAU seconds and percentages retain published units",
+    "duration": 2605,
+    "csv": "position_seconds,audience_percentage\n26,101.44\n52,38.46\n78,29.09\n",
+    "times": [26, 52, 78],
+    "retention": [101.44, 38.46, 29.09]
+  },
+  {
+    "name": "ACAU normalized ratios map to the video timeline",
+    "duration": 2605,
+    "csv": "position_ratio,audience_ratio\n0.01,1.0144\n0.02,0.3846\n0.03,0.2909\n",
+    "times": [26.05, 52.1, 78.15],
+    "retention": [101.44, 38.46, 29.09]
   }
 ]

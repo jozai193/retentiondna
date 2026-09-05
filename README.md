@@ -5,7 +5,7 @@ RetentionDNA turns audience-retention evidence into concrete video edits. It ali
 **Live demo:** https://retentiondna.advikmjevoor.chatgpt.site  
 **Narrated walkthrough:** [download the public 1080p demo](https://github.com/jozai193/retentiondna/releases/download/v0.1.0-hackathon/retentiondna-demo.mp4)
 
-**Synthetic smoke-test result:** RetentionDNA aligns a deliberately generated 30.5-point drop at 00:25 with 7.022 seconds of measured silence, three nearby scene transitions, and repeated setup language. It recommends a bounded 12.0–28.022 second repair and renders the 100.021-second draft to an 83.999-second better cut. This proves timeline alignment and deterministic rendering, not universal recommendation accuracy.
+**Live real-data case:** the workspace opens on a public ACAU YouTube video and 100 audience-retention measurements published through Uruguay's government open-data catalog. RetentionDNA detects its strongest local loss at 01:18. The separate synthetic engineering fixture remains available only to demonstrate deterministic preview and rendering.
 
 ## Product contract
 
@@ -60,13 +60,14 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. A built-in sample is ready immediately, or use **Upload project** with a local video and retention file.
+Open `http://localhost:3000`. A verified public YouTube case backed by official ACAU open data is ready immediately. Use **Synthetic fixture** to exercise the deterministic editing pipeline or **Upload project** with your own local video and retention file.
 
 Supported CSV headers:
 
 - `time` or `timestamp`, expressed as seconds or `MM:SS`
 - `retention`, expressed as a percentage or decimal ratio
 - YouTube API-style `elapsedVideoTimeRatio` plus `audienceWatchRatio`
+- ACAU open-data `position_seconds`, `position_ratio`, or `position_percentage` plus `audience_ratio` or `audience_percentage`
 - A saved official `reports.query` JSON response containing those two columns
 
 Explicit values such as `1.4%` remain 1.4%. Unitless generic values at or below 1.5 are treated as decimal ratios for backwards compatibility; official ratio headers are always treated as ratios, including replay values above 1.0.
@@ -102,7 +103,7 @@ npm run lint:all
 npm run build
 ```
 
-See [VALIDATION.md](VALIDATION.md) for the real YouTube heat-map benchmark, real narrated-media audit, official Analytics report adapter, and the exact boundary between compatibility evidence and outcome validation.
+See [VALIDATION.md](VALIDATION.md) for the official ACAU open-data case, real YouTube heat-map benchmark, narrated-media audit, official Analytics report adapter, and the exact boundary between compatibility evidence and outcome validation.
 
 ## Submission artifacts
 
@@ -115,7 +116,7 @@ See [VALIDATION.md](VALIDATION.md) for the real YouTube heat-map benchmark, real
 
 ## Implementation milestones
 
-- **M1 — Working surface:** responsive forensic editing workspace, sample timeline, evidence panel.
+- **M1 — Working surface:** responsive forensic editing workspace, real public case, sample timeline, and evidence panel.
 - **M2 — Real input:** local video upload, CSV parsing, normalized YouTube ratio support, error states.
 - **M3 — Analysis:** dip/spike detection, confidence/severity, synchronized inspection.
 - **M4 — Repair:** non-destructive cut preview, edit-plan export, deterministic FFmpeg renderer.

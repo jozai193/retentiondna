@@ -17,6 +17,7 @@ import {
   CircleAlert,
   Database,
   Download,
+  ExternalLink,
   FileChartColumn,
   Film,
   LoaderCircle,
@@ -54,6 +55,7 @@ import {
   type RetentionSignal,
   type SourceIdentity,
 } from '@/lib/retention';
+import { ACAU_CASE } from '@/lib/acau-case';
 import {
   alignedTranscriptWindow,
   evidenceFor,
@@ -81,6 +83,8 @@ type OutcomeComparison = {
   after: number;
   change: number;
 };
+
+type SourceMode = 'acau' | 'synthetic' | 'upload';
 
 const CREATOR_MEMORY_KEY = 'retentiondna.creator-memory.v1';
 
@@ -153,25 +157,27 @@ const FALLBACK_SIGNAL: RetentionSignal = {
 
 export function RetentionWorkspace() {
   const initialSignals = useMemo(
-    () => detectRetentionSignals(SAMPLE_RETENTION),
+    () => detectRetentionSignals(ACAU_CASE.points),
     [],
   );
-  const [points, setPoints] = useState<RetentionPoint[]>(SAMPLE_RETENTION);
+  const [points, setPoints] = useState<RetentionPoint[]>(ACAU_CASE.points);
   const [signals, setSignals] = useState<RetentionSignal[]>(
     initialSignals.length ? initialSignals : [FALLBACK_SIGNAL],
   );
   const [selectedId, setSelectedId] = useState(
     strongestSignal(initialSignals).id,
   );
-  const [sourceName, setSourceName] = useState('creator-workflow-draft.mp4');
-  const [videoUrl, setVideoUrl] = useState('/demo/retentiondna-sample.mp4');
-  const [duration, setDuration] = useState(100);
+  const [sourceMode, setSourceMode] = useState<SourceMode>('acau');
+  const [sourceName, setSourceName] = useState<string>(ACAU_CASE.title);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [duration, setDuration] = useState<number>(ACAU_CASE.durationSeconds);
+  const [youtubeStart, setYoutubeStart] = useState(0);
+  const [youtubeAutoplay, setYoutubeAutoplay] = useState(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvText, setCsvText] = useState('');
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
-  const [transcriptLines, setTranscriptLines] =
-    useState<TranscriptLine[]>(SAMPLE_TRANSCRIPT);
+  const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [workflow, dispatchWorkflow] = useReducer(
     workflowReducer,
@@ -200,12 +206,13 @@ export function RetentionWorkspace() {
     () =>
       evidenceFor(
         selected,
-        videoUrl.startsWith('/demo/'),
+        sourceMode === 'synthetic',
         transcript,
         transcriptLines.length > 0,
       ),
-    [selected, videoUrl, transcript, transcriptLines.length],
+    [selected, sourceMode, transcript, transcriptLines.length],
   );
+  const youtubeEmbedUrl = `https://www.youtube-nocookie.com/embed/${ACAU_CASE.videoId}?rel=0&modestbranding=1&start=${Math.floor(youtubeStart)}&autoplay=${youtubeAutoplay ? 1 : 0}`;
   const checkpointPoint = useMemo(
     () =>
       points.find((point) => point.time >= Math.min(30, duration)) ??
@@ -237,10 +244,10 @@ export function RetentionWorkspace() {
     void Promise.resolve(
       context.registerTool(
         {
-          name: 'load_sample_analysis',
-          title: 'Load sample analysis',
+          name: 'load_public_case_analysis',
+          title: 'Load public retention case',
           description:
-            'Load the built-in RetentionDNA sample and display its detected audience-retention signals.',
+            'Load the verified public ACAU YouTube case and display signals detected from its official open retention curve.',
           inputSchema: {
             type: 'object',
             properties: {},
@@ -248,20 +255,23 @@ export function RetentionWorkspace() {
           },
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: async () => {
-            const nextSignals = detectRetentionSignals(SAMPLE_RETENTION);
-            setPoints(SAMPLE_RETENTION);
+            const nextSignals = detectRetentionSignals(ACAU_CASE.points);
+            setPoints(ACAU_CASE.points);
             setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
             setSelectedId(strongestSignal(nextSignals).id);
-            setSourceName('creator-workflow-draft.mp4');
-            setVideoUrl('/demo/retentiondna-sample.mp4');
-            setDuration(100);
-            setTranscriptLines(SAMPLE_TRANSCRIPT);
+            setSourceMode('acau');
+            setSourceName(ACAU_CASE.title);
+            setVideoUrl('');
+            setDuration(ACAU_CASE.durationSeconds);
+            setYoutubeStart(0);
+            setYoutubeAutoplay(false);
+            setTranscriptLines([]);
             dispatchWorkflow({ type: 'RESET' });
             promotionPhase.current = 'idle';
             setOutcome(null);
             return {
               loaded: true,
-              points: SAMPLE_RETENTION.length,
+              points: ACAU_CASE.points.length,
               signals: Math.max(nextSignals.length, 1),
             };
           },
@@ -327,6 +337,7 @@ export function RetentionWorkspace() {
       setSignals(nextSignals);
       setSelectedId(strongestSignal(nextSignals).id);
       setDuration(videoDuration);
+      setSourceMode('upload');
       setSourceName(videoFile.name);
       setTranscriptLines(nextTranscript);
       setVideoUrl((current) => {
@@ -354,11 +365,32 @@ export function RetentionWorkspace() {
     }
   }
 
-  function resetSample() {
+  function loadAcauCase() {
+    const nextSignals = detectRetentionSignals(ACAU_CASE.points);
+    setPoints(ACAU_CASE.points);
+    setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
+    setSelectedId(strongestSignal(nextSignals).id);
+    setSourceMode('acau');
+    setSourceName(ACAU_CASE.title);
+    setVideoUrl('');
+    setDuration(ACAU_CASE.durationSeconds);
+    setYoutubeStart(0);
+    setYoutubeAutoplay(false);
+    setTranscriptLines([]);
+    setOutcome(null);
+    setOutcomeError('');
+    setExportState('idle');
+    setIsPlaying(false);
+    promotionPhase.current = 'idle';
+    dispatchWorkflow({ type: 'RESET' });
+  }
+
+  function loadSyntheticFixture() {
     const nextSignals = detectRetentionSignals(SAMPLE_RETENTION);
     setPoints(SAMPLE_RETENTION);
     setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
     setSelectedId(strongestSignal(nextSignals).id);
+    setSourceMode('synthetic');
     setSourceName('creator-workflow-draft.mp4');
     setVideoUrl('/demo/retentiondna-sample.mp4');
     setDuration(100);
@@ -371,6 +403,11 @@ export function RetentionWorkspace() {
   }
 
   function previewAt(time: number) {
+    if (sourceMode === 'acau') {
+      setYoutubeStart(Math.max(0, time));
+      setYoutubeAutoplay(true);
+      return;
+    }
     if (!videoRef.current) return;
     videoRef.current.currentTime = Math.max(0, time);
     void videoRef.current.play();
@@ -445,6 +482,7 @@ export function RetentionWorkspace() {
   }
 
   async function downloadPlan() {
+    if (sourceMode === 'acau') return;
     setExportState('hashing');
     try {
       const sourceBlob = videoUrl.startsWith('/demo/')
@@ -557,10 +595,20 @@ export function RetentionWorkspace() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={resetSample}
-            className="hidden text-muted-foreground md:flex"
+            onClick={
+              sourceMode === 'acau' ? loadSyntheticFixture : loadAcauCase
+            }
+            aria-label={
+              sourceMode === 'acau'
+                ? 'Load synthetic fixture'
+                : 'Load real case'
+            }
+            className="text-muted-foreground"
           >
-            <RotateCcw /> Sample
+            <RotateCcw />
+            <span className="hidden md:inline">
+              {sourceMode === 'acau' ? 'Synthetic fixture' : 'Real case'}
+            </span>
           </Button>
           <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
             <DialogTrigger
@@ -660,7 +708,10 @@ export function RetentionWorkspace() {
               >
                 <TabsList>
                   <TabsTrigger value="original">Original</TabsTrigger>
-                  <TabsTrigger value="better" disabled={status !== 'repaired'}>
+                  <TabsTrigger
+                    value="better"
+                    disabled={sourceMode === 'acau' || status !== 'repaired'}
+                  >
                     Better cut
                   </TabsTrigger>
                 </TabsList>
@@ -672,43 +723,61 @@ export function RetentionWorkspace() {
           </div>
           <div className="overflow-hidden rounded-2xl border border-white/9 bg-card shadow-2xl shadow-black/25">
             <div className="relative aspect-video overflow-hidden bg-black">
-              <video
-                ref={videoRef}
-                src={videoUrl}
-                className="h-full w-full object-contain"
-                preload="metadata"
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onEnded={() => setIsPlaying(false)}
-                onTimeUpdate={handleTimeUpdate}
-                onClick={togglePlayback}
-                playsInline
-              >
-                <track
-                  kind="captions"
-                  src="/demo/sample-captions.vtt"
-                  srcLang="en"
-                  label="English"
+              {sourceMode === 'acau' ? (
+                <iframe
+                  key={youtubeEmbedUrl}
+                  src={youtubeEmbedUrl}
+                  title={`${ACAU_CASE.title} on YouTube`}
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
                 />
-              </video>
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-              <button
-                onClick={togglePlayback}
-                aria-label={isPlaying ? 'Pause video' : 'Play video'}
-                className="absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-black/45 backdrop-blur transition hover:scale-105 hover:border-primary/60"
-              >
-                {isPlaying ? (
-                  <Pause className="h-6 w-6 fill-white" />
-                ) : (
-                  <Play className="ml-1 h-6 w-6 fill-white" />
-                )}
-              </button>
-              <div className="absolute bottom-3 left-3 max-w-[70%] truncate rounded-md border border-white/10 bg-black/55 px-2.5 py-1.5 font-mono text-xs text-white/80 backdrop-blur sm:bottom-4 sm:left-4">
-                {sourceName} · {formatTime(duration)}
-              </div>
-              {videoUrl.startsWith('/demo/') && cutMode === 'original' && (
+              ) : (
+                <>
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    className="h-full w-full object-contain"
+                    preload="metadata"
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    onEnded={() => setIsPlaying(false)}
+                    onTimeUpdate={handleTimeUpdate}
+                    onClick={togglePlayback}
+                    playsInline
+                  >
+                    <track
+                      kind="captions"
+                      src={
+                        sourceMode === 'synthetic'
+                          ? '/demo/sample-captions.vtt'
+                          : '/demo/empty-captions.vtt'
+                      }
+                      srcLang="en"
+                      label="English"
+                    />
+                  </video>
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                  <button
+                    onClick={togglePlayback}
+                    aria-label={isPlaying ? 'Pause video' : 'Play video'}
+                    className="absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-black/45 backdrop-blur transition hover:scale-105 hover:border-primary/60"
+                  >
+                    {isPlaying ? (
+                      <Pause className="h-6 w-6 fill-white" />
+                    ) : (
+                      <Play className="ml-1 h-6 w-6 fill-white" />
+                    )}
+                  </button>
+                  <div className="absolute bottom-3 left-3 max-w-[70%] truncate rounded-md border border-white/10 bg-black/55 px-2.5 py-1.5 font-mono text-xs text-white/80 backdrop-blur sm:bottom-4 sm:left-4">
+                    {sourceName} · {formatTime(duration)}
+                  </div>
+                </>
+              )}
+              {sourceMode === 'synthetic' && cutMode === 'original' && (
                 <div className="absolute right-2 top-2 max-w-[calc(100%-1rem)] rounded-full border border-amber-300/25 bg-amber-950/85 px-3 py-1.5 text-center text-xs leading-4 text-amber-100 backdrop-blur sm:right-4 sm:top-4">
-                  Synthetic smoke test · alignment only
+                  Synthetic engineering fixture · edit pipeline only
                 </div>
               )}
               {cutMode === 'better' && (
@@ -717,6 +786,39 @@ export function RetentionWorkspace() {
                 </div>
               )}
             </div>
+            {sourceMode === 'acau' && (
+              <div className="flex flex-col gap-3 border-t border-white/8 bg-[#0b0e0f] px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-primary/25 bg-primary/8 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-primary">
+                      Real YouTube case
+                    </span>
+                    <span className="text-white/80">100 measured points</span>
+                  </div>
+                  <p className="mt-1 truncate text-muted-foreground">
+                    {ACAU_CASE.subtitle} · {ACAU_CASE.channel}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-3">
+                  <a
+                    href={ACAU_CASE.videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-white/70 transition hover:text-white"
+                  >
+                    YouTube <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <a
+                    href={ACAU_CASE.datasetUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-primary transition hover:text-primary/80"
+                  >
+                    Official data <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </div>
+            )}
             <div className="border-t border-white/8 bg-[#0b0e0f] p-4 sm:p-5">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
@@ -782,8 +884,18 @@ export function RetentionWorkspace() {
             </div>
           ) : (
             <div className="mt-4 rounded-xl border border-dashed border-white/10 bg-card p-5 text-sm text-muted-foreground">
-              Curve-only analysis active. Add a timestamped transcript to ground
-              each signal in the spoken content.
+              {sourceMode === 'acau' ? (
+                <>
+                  Curve-only analysis from ACAU&apos;s official open dataset (
+                  {ACAU_CASE.analyticsPeriod}). No transcript or automated scene
+                  evidence is claimed for this public case.
+                </>
+              ) : (
+                <>
+                  Curve-only analysis active. Add a timestamped transcript to
+                  ground each signal in the spoken content.
+                </>
+              )}
             </div>
           )}
         </div>
@@ -856,12 +968,21 @@ export function RetentionWorkspace() {
                 </div>
               </div>
               <div className="mt-4 flex gap-2">
-                <Button className="flex-1" onClick={makeRepair}>
-                  {status === 'repaired' ? <Check /> : <Scissors />}
-                  {status === 'repaired'
-                    ? 'Better cut ready'
-                    : 'Create better cut'}
-                </Button>
+                {sourceMode === 'acau' ? (
+                  <Button
+                    className="flex-1"
+                    onClick={() => previewAt(selected.time)}
+                  >
+                    <Play /> Open at {formatTime(selected.time)}
+                  </Button>
+                ) : (
+                  <Button className="flex-1" onClick={makeRepair}>
+                    {status === 'repaired' ? <Check /> : <Scissors />}
+                    {status === 'repaired'
+                      ? 'Better cut ready'
+                      : 'Create better cut'}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="border-white/10 bg-white/5"
@@ -872,6 +993,12 @@ export function RetentionWorkspace() {
                   Preview
                 </Button>
               </div>
+              {sourceMode === 'acau' && (
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                  Recommendation only. Upload a rights-cleared source file to
+                  preview, export, or render this edit.
+                </p>
+              )}
             </div>
           </div>
           {status === 'repaired' && (
@@ -884,7 +1011,7 @@ export function RetentionWorkspace() {
                     {selected.repair.action === 'remove'
                       ? `The preview skips ${formatTime(selected.repair.start)}–${formatTime(selected.repair.end)}.`
                       : `The preview opens with a ${formatTime(selected.repair.end - selected.repair.start)} teaser, then plays the full source.`}{' '}
-                    {videoUrl.startsWith('/demo/')
+                    {sourceMode === 'synthetic'
                       ? selected.repair.action === 'remove'
                         ? 'Download the verified synthetic render or export its source-bound edit plan.'
                         : 'Export the source-bound edit plan to render this promotion locally.'
@@ -898,7 +1025,7 @@ export function RetentionWorkspace() {
                 activeMode={cutMode}
                 onSelect={selectCutMode}
               />
-              {videoUrl.startsWith('/demo/') &&
+              {sourceMode === 'synthetic' &&
                 selected.repair.action === 'remove' && (
                   <a
                     href="/demo/retentiondna-better-cut.mp4"

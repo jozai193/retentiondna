@@ -2,7 +2,15 @@
 
 RetentionDNA validates different claims with different evidence. A single synthetic clip cannot prove that an edit will improve every video, so the project keeps these layers separate.
 
-## 1. Real viewer-behavior curve benchmark
+## 1. Live official open-data case
+
+The default workspace pairs a currently public [ACAU YouTube video](https://www.youtube.com/watch?v=2vMlH3_3Gv4) with its 100-point audience-retention curve from Uruguay's official [ACAU YouTube audience metrics dataset](https://catalogodatos.gub.uy/dataset/metricas-audiencia-canal-youtube-acau/resource/b23960e0-4f11-4719-ae11-79263d15e447). The catalog says the measurements were extracted through the YouTube Analytics API, cover 16 September 2024 through 15 April 2025, and use Uruguay's open-data license.
+
+RetentionDNA loads the published curve rather than fabricating values. It marks retention as measured while correctly leaving transcript and automated visual evidence unavailable. Because the project does not own the source video, the public case offers recommendation and timestamp review only; preview, plan export, and rendering require a rights-cleared upload.
+
+The dataset's native `position_seconds`/`position_ratio`/`position_percentage` and `audience_ratio`/`audience_percentage` columns are supported by both the browser and Python parsers and covered by the shared fixtures.
+
+## 2. Real viewer-behavior curve benchmark
 
 The external [vRetention dataset](https://github.com/flowtele/vRetention), documented in its [ACM MMSys 2024 paper](https://yihchun.com/papers/vretention.pdf), contains public YouTube `most replayed` heat-map SVG paths for 199,041 videos across 15 categories and 20 countries. It is useful for testing whether RetentionDNA can parse varied real-world curve shapes and consistently identify localized replay signals.
 
@@ -21,7 +29,7 @@ python -B engine/vretention_benchmark.py `
 
 The clean-room adapter uses deterministic reservoir sampling rather than the dataset's first rows, parses the documented SVG path field, normalizes it to the video timeline, and reports representative failures, error rate, detected dips/spikes, and category/country coverage. It exits nonzero when no rows parse or the configured error-rate threshold is exceeded. Its report explicitly labels the result as signal-extraction testing rather than outcome validation.
 
-## 2. Real media compatibility
+## 3. Real media compatibility
 
 The renderer and FFmpeg evidence extractors are tested independently of retention correctness. The repository's narrated 1080p product walkthrough contains real speech, screen motion, H.264 video, and AAC audio—not generated humming. Audit it without modifying the source:
 
@@ -32,7 +40,7 @@ python -B engine/validate_media.py submission/retentiondna-demo.mp4 `
 
 Automated integration tests additionally cover video with no audio, measured silence, invalid intervals, the 35% destructive-edit safety limit, real replay-teaser rendering, unknown-operation rejection, and source fingerprint verification.
 
-## 3. Official creator analytics
+## 4. Official creator analytics
 
 YouTube's [channel report](https://developers.google.com/youtube/analytics/channel_reports) requires OAuth authorization by the channel owner. Its audience-retention report uses `elapsedVideoTimeRatio` with `audienceWatchRatio`; the [official metric definition](https://developers.google.com/youtube/analytics/metrics) notes that segments can exceed 1.0 when viewers replay them.
 
@@ -49,7 +57,7 @@ When a channel is available, the remaining connector only needs to obtain consen
 
 The hosted workspace can also import a saved official `reports.query` JSON response directly. OAuth secrets and tokens remain outside the project.
 
-## 4. Cross-runtime contract
+## 5. Cross-runtime contract
 
 The browser and Python engine run the same fixtures from `fixtures/golden-retention-cases.json`. These cases distinguish explicit percentages, generic decimal ratios, official YouTube ratio headers, and short second-based timelines. Edit plans use the versioned schema in `contracts/retentiondna.edit-plan.v2.schema.json` and bind to the exact source by size, duration, and SHA-256.
 
@@ -57,9 +65,10 @@ The browser and Python engine run the same fixtures from `fixtures/golden-retent
 
 | Claim                                                           | Current evidence                                                    |
 | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| RetentionDNA analyzes a real, public YouTube retention curve    | Live ACAU video plus official open-data measurements                |
 | RetentionDNA parses official API-shaped reports safely          | Automated fixtures and validation tests                             |
 | Curve processing survives varied real YouTube replay shapes     | External vRetention benchmark harness; dataset run pending          |
 | The media pipeline handles real spoken/visual footage           | Narrated product walkthrough audit                                  |
-| Deterministic cuts and teaser promotions obey safety limits    | FFmpeg integration and source-identity tests                        |
-| Browser and engine agree on retention units                    | Shared golden fixture corpus                                        |
+| Deterministic cuts and teaser promotions obey safety limits     | FFmpeg integration and source-identity tests                        |
+| Browser and engine agree on retention units                     | Shared golden fixture corpus                                        |
 | A recommendation improves a creator's future audience retention | Requires creator-owned A/B or before/after uploads; not yet claimed |

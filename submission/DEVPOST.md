@@ -18,7 +18,9 @@ RetentionDNA accepts a draft video, an audience-retention CSV or official YouTub
 
 For an audience-loss signal, RetentionDNA proposes a bounded removal; for a replay spike, it can prepend a short teaser from the replayed moment. The creator can preview the better cut without changing the source, compare a later curve at the same timestamp, export a source-bound JSON edit plan, and render a new MP4 with a deterministic FFmpeg pipeline.
 
-The built-in synthetic smoke test exercises the full loop: a deliberately generated 30.5-point drop at 00:25 aligns with 7.022 seconds of silence, three nearby scene changes, and repeated setup language. RetentionDNA recommends removing 12.0–28.022 seconds and renders the 100.021-second draft to an 83.999-second better cut. It proves alignment and deterministic rendering, not universal recommendation accuracy.
+The live workspace opens with a real public YouTube case from ACAU, Uruguay's national film and audiovisual agency. Its 100-point curve comes from ACAU's official open-data export of YouTube Analytics measurements. RetentionDNA identifies the strongest local loss at 01:18 and opens the real video at that moment. It marks the curve as measured while leaving transcript and scene evidence unavailable, because those were not supplied.
+
+A separate, clearly labeled synthetic engineering fixture exercises the full edit loop: a deliberately generated 30.5-point drop at 00:25 aligns with 7.022 seconds of silence, three nearby scene changes, and repeated setup language. It proves timeline alignment and deterministic rendering, not universal recommendation accuracy.
 
 ## How we built it
 
@@ -26,7 +28,7 @@ The responsive workspace uses React 19, TypeScript, Tailwind CSS, and shadcn/ui.
 
 The evidence engine uses Python's standard library, FFprobe, and FFmpeg. `silencedetect` finds audio gaps; scene scores locate visual transitions; timestamped transcript features expose pace, filler, and repeated language. A deterministic renderer validates numeric intervals, verifies the selected source's size, duration, and SHA-256, rejects unknown actions, merges overlaps, renders removals or one bounded teaser, and refuses plans that remove more than 35% of a source.
 
-We also built two independent validation paths: a clean-room adapter for the official YouTube Analytics retention response, and an external benchmark harness for the vRetention research dataset's public YouTube heat-map curves. The dataset is kept external and is used only to stress-test curve parsing and signal extraction—not to claim causal or outcome accuracy.
+We also built three independent real-data paths: native support for ACAU's official open-data schema, a clean-room adapter for the official YouTube Analytics retention response, and an external benchmark harness for the vRetention research dataset's public YouTube heat-map curves. External datasets are used to test parsing and signal extraction—not to claim causal or outcome accuracy.
 
 ## Challenges we ran into
 
@@ -37,10 +39,11 @@ Rendering safely was another challenge. Instead of letting generated text become
 ## Accomplishments that we're proud of
 
 - A complete analyze → inspect → repair → compare → export → render loop.
+- A live, publicly verifiable YouTube case backed by 100 official open-data retention measurements.
 - Multimodal alignment that can be independently checked against the synthetic sample media.
 - Privacy-first browser analysis and local rendering with no mandatory cloud account.
 - Safety boundaries that preserve the source and reject destructive, unsupported, or wrong-source plans.
-- A reproducible smoke test, a real narrated-media compatibility audit, 30 automated checks across browser and engine contracts, and a production build.
+- A reproducible smoke test, a real narrated-media compatibility audit, cross-runtime automated checks, and a production build.
 
 ## What we learned
 

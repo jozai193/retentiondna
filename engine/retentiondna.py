@@ -53,16 +53,17 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
         raise ValueError("retention CSV needs at least two data rows")
 
     aliases = {key.strip().lower(): key for key in (rows[0].keys() or [])}
-    time_key = next((aliases[name] for name in ("time", "timestamp", "elapsedvideotimeratio", "elapsed ratio", "elapsed") if name in aliases), None)
-    retention_key = next((aliases[name] for name in ("retention", "audiencewatchratio", "audience retention", "watch ratio") if name in aliases), None)
+    time_key = next((aliases[name] for name in ("time", "timestamp", "elapsedvideotimeratio", "elapsed ratio", "position_ratio", "position_percentage", "position_seconds", "elapsed") if name in aliases), None)
+    retention_key = next((aliases[name] for name in ("retention", "audiencewatchratio", "audience_ratio", "audience_percentage", "audience retention", "watch ratio") if name in aliases), None)
     if not time_key or not retention_key:
-        raise ValueError("expected time/timestamp and retention/audienceWatchRatio columns")
+        raise ValueError("expected time/timestamp, YouTube Analytics, or ACAU position and audience columns")
 
-    normalized_time = time_key.strip().lower() in {"elapsedvideotimeratio", "elapsed ratio"}
-    ratio_retention = retention_key.strip().lower() in {"audiencewatchratio", "watch ratio"}
+    normalized_time = time_key.strip().lower() in {"elapsedvideotimeratio", "elapsed ratio", "position_ratio", "position_percentage"}
+    percentage_time = time_key.strip().lower() == "position_percentage"
+    ratio_retention = retention_key.strip().lower() in {"audiencewatchratio", "watch ratio", "audience_ratio"}
     parsed = [
         Point(
-            parse_time(row[time_key], normalized=normalized_time),
+            parse_time(row[time_key], normalized=normalized_time, percentage_header=percentage_time),
             parse_retention_value(row[retention_key], ratio_header=ratio_retention),
         )
         for row in rows
@@ -77,7 +78,7 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
     points = sorted(
         [
             Point(
-                point.time * duration if normalized_time and duration else point.time,
+                round(point.time * duration, 6) if normalized_time and duration else point.time,
                 point.retention,
             )
             for point in parsed
@@ -486,7 +487,7 @@ def non_overlapping_removals(operations: Iterable[dict]) -> list[dict]:
     return result
 
 
-def parse_time(value: str, normalized: bool = False) -> float:
+def parse_time(value: str, normalized: bool = False, percentage_header: bool = False) -> float:
     cleaned = value.strip()
     if ":" in cleaned:
         total = 0.0
@@ -495,7 +496,7 @@ def parse_time(value: str, normalized: bool = False) -> float:
         number = total
     else:
         number = float(cleaned.rstrip("%"))
-        if normalized and cleaned.endswith("%"):
+        if normalized and (cleaned.endswith("%") or percentage_header):
             number /= 100
     if not math.isfinite(number):
         raise ValueError("retention timestamps must be finite")

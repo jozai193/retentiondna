@@ -4,12 +4,14 @@
 
 - [x] End-to-end browser workflow works with built-in sample.
 - [x] Real CSV parsing and signal detection.
+- [x] Public ACAU YouTube case aligned with 100 official open-data retention points.
+- [x] ACAU dataset schema supported in browser and Python runtimes.
 - [x] Audio silence, scene-change, and transcript evidence in local engine.
 - [x] Non-destructive better-cut preview.
 - [x] Auditable plan export and deterministic MP4 render.
 - [x] Official YouTube Analytics response adapter and external vRetention benchmark harness.
 - [x] Real narrated 1080p media compatibility audit.
-- [x] 30 browser/engine contract checks, repository-wide lint, and production build.
+- [x] Browser/engine contract checks, repository-wide lint, and production build.
 - [x] Source-bound edit-plan v2 with wrong-source and unknown-action rejection.
 - [x] Real replay-spike teaser rendering and preview.
 - [x] Evidence provenance, outcome comparison, and device-local Creator DNA.
