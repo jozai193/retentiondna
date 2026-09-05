@@ -1,0 +1,30 @@
+[
+  {
+    "name": "explicit percentages remain percentages",
+    "duration": 10,
+    "csv": "time,retention\n0,1.4%\n5,1.1%\n10,0.8%\n",
+    "times": [0, 5, 10],
+    "retention": [1.4, 1.1, 0.8]
+  },
+  {
+    "name": "unitless generic decimals are ratios",
+    "duration": 10,
+    "csv": "time,retention\n0,1\n5,0.72\n10,0.41\n",
+    "times": [0, 5, 10],
+    "retention": [100, 72, 41]
+  },
+  {
+    "name": "official YouTube headers are explicit ratios",
+    "duration": 120,
+    "csv": "elapsedVideoTimeRatio,audienceWatchRatio\n0,1\n0.5,1.2\n1,0.8\n",
+    "times": [0, 60, 120],
+    "retention": [100, 120, 80]
+  },
+  {
+    "name": "subsecond time headers remain seconds",
+    "duration": 10,
+    "csv": "time,retention\n0,100\n0.5,90\n1,80\n",
+    "times": [0, 0.5, 1],
+    "retention": [100, 90, 80]
+  }
+]

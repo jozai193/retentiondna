@@ -1,6 +1,11 @@
 {
-  "schema": "retentiondna.edit-plan.v1",
-  "source": "public\\demo\\retentiondna-sample.mp4",
+  "schema": "retentiondna.edit-plan.v2",
+  "source": {
+    "name": "retentiondna-sample.mp4",
+    "sizeBytes": 1365505,
+    "durationSeconds": 100.021,
+    "sha256": "427e9f831254782cf3fd0bd9118827ba92498e61bca7fc4ae9eaf34ac130cb30"
+  },
   "analysis": {
     "retentionPoints": 21,
     "silencesDetected": 1,
@@ -51,11 +56,7 @@
         ]
       },
       "visual": {
-        "sceneChanges": [
-          12.021,
-          20.021,
-          27.021
-        ],
+        "sceneChanges": [12.021, 20.021, 27.021],
         "sceneChangeCount": 3
       }
     },
@@ -94,11 +95,7 @@
         ]
       },
       "visual": {
-        "sceneChanges": [
-          20.021,
-          27.021,
-          32.021
-        ],
+        "sceneChanges": [20.021, 27.021, 32.021],
         "sceneChangeCount": 3
       }
     },
@@ -131,9 +128,7 @@
         "silences": []
       },
       "visual": {
-        "sceneChanges": [
-          70.021
-        ],
+        "sceneChanges": [70.021],
         "sceneChangeCount": 1
       }
     },
@@ -166,10 +161,7 @@
         "silences": []
       },
       "visual": {
-        "sceneChanges": [
-          70.021,
-          84.021
-        ],
+        "sceneChanges": [70.021, 84.021],
         "sceneChangeCount": 2
       }
     }

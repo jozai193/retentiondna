@@ -12,9 +12,11 @@ import argparse
 import csv
 import json
 import math
+import random
 import re
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 
 from retentiondna import Point, detect_signals
@@ -169,23 +171,48 @@ def parse_duration(value: str) -> float:
     return duration
 
 
-def benchmark(dataset: Path, limit: int = 1000) -> dict:
+def reservoir_sample(
+    rows: Iterable[dict[str, str]],
+    limit: int,
+    seed: int,
+) -> tuple[list[dict[str, str]], int]:
+    randomizer = random.Random(seed)
+    sample: list[dict[str, str]] = []
+    count = 0
+    for count, row in enumerate(rows, start=1):
+        if len(sample) < limit:
+            sample.append(row)
+            continue
+        replacement = randomizer.randrange(count)
+        if replacement < limit:
+            sample[replacement] = row
+    return sample, count
+
+
+def benchmark(
+    dataset: Path,
+    limit: int = 1000,
+    seed: int = 20260905,
+    max_error_rate: float = 0.1,
+) -> dict:
     if limit <= 0:
         raise ValueError("limit must be positive")
+    if not 0 <= max_error_rate <= 1:
+        raise ValueError("max error rate must be between zero and one")
     parsed = 0
     errors = 0
     dips = 0
     spikes = 0
     countries: Counter[str] = Counter()
     categories: Counter[str] = Counter()
+    error_examples: list[dict[str, str]] = []
     with dataset.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         required = {"id", "duration", "retentionCurve"}
         if not reader.fieldnames or not required.issubset(reader.fieldnames):
             raise ValueError("vRetention CSV needs id, duration, and retentionCurve columns")
-        for row in reader:
-            if parsed + errors >= limit:
-                break
+        sampled_rows, dataset_rows = reservoir_sample(reader, limit, seed)
+        for row in sampled_rows:
             try:
                 points = points_from_svg(row["retentionCurve"], parse_duration(row["duration"]))
                 signals = detect_signals(points)
@@ -194,14 +221,37 @@ def benchmark(dataset: Path, limit: int = 1000) -> dict:
                 countries[row.get("countryCode", "unknown") or "unknown"] += 1
                 categories[row.get("categoryId", "unknown") or "unknown"] += 1
                 parsed += 1
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as error:
                 errors += 1
+                if len(error_examples) < 5:
+                    error_examples.append(
+                        {
+                            "id": row.get("id", "unknown") or "unknown",
+                            "error": str(error),
+                        }
+                    )
+    attempted = parsed + errors
+    error_rate = errors / attempted if attempted else 1.0
+    failure_reasons = []
+    if not attempted:
+        failure_reasons.append("dataset contains no data rows")
+    if not parsed:
+        failure_reasons.append("no rows parsed successfully")
+    if error_rate > max_error_rate:
+        failure_reasons.append(
+            f"parse error rate {error_rate:.1%} exceeds {max_error_rate:.1%}"
+        )
     return {
+        "status": "failed" if failure_reasons else "passed",
         "source": "vRetention public YouTube most-replayed heat-map paths",
         "scope": "signal-extraction benchmark; not creator Studio retention or outcome validation",
-        "attempted": parsed + errors,
+        "sampling": {"method": "deterministic reservoir", "seed": seed, "datasetRows": dataset_rows},
+        "attempted": attempted,
         "parsed": parsed,
         "errors": errors,
+        "errorRate": round(error_rate, 4),
+        "errorExamples": error_examples,
+        "failureReasons": failure_reasons,
         "signals": {"dips": dips, "spikes": spikes},
         "coverage": {"countries": len(countries), "categories": len(categories)},
     }
@@ -211,15 +261,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark RetentionDNA against an external vRetention YouTube CSV")
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--seed", type=int, default=20260905)
+    parser.add_argument("--max-error-rate", type=float, default=0.1)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
-    result = benchmark(args.dataset, args.limit)
+    result = benchmark(args.dataset, args.limit, args.seed, args.max_error_rate)
     encoded = json.dumps(result, indent=2)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(encoded + "\n", encoding="utf-8")
     print(encoded)
-    return 0
+    return 0 if result["status"] == "passed" else 2
 
 
 if __name__ == "__main__":

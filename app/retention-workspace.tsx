@@ -1,12 +1,21 @@
 'use client';
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChangeEvent,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import {
   Activity,
   AudioLines,
+  BadgeCheck,
   Check,
   ChevronDown,
   CircleAlert,
+  Database,
   Download,
   FileChartColumn,
   Film,
@@ -17,6 +26,8 @@ import {
   Scissors,
   Sparkles,
   ScanLine,
+  ShieldCheck,
+  TrendingUp,
   Upload,
   WandSparkles,
   Zap,
@@ -37,13 +48,41 @@ import {
   createEditDecisionList,
   detectRetentionSignals,
   formatTime,
-  parseRetentionCsv,
+  parseRetentionInput,
   SAMPLE_RETENTION,
   type RetentionPoint,
   type RetentionSignal,
+  type SourceIdentity,
 } from '@/lib/retention';
+import {
+  alignedTranscriptWindow,
+  evidenceFor,
+  type EvidenceCueData,
+  type TranscriptLine,
+} from '@/lib/evidence';
+import {
+  initialWorkflowState,
+  workflowReducer,
+  type CutMode,
+} from '@/lib/workflow';
 
-type TranscriptLine = { time: number; end: number; text: string };
+type CreatorMemoryEntry = {
+  sourceName: string;
+  analyzedAt: string;
+  duration: number;
+  strongestType: 'dip' | 'spike';
+  strongestTime: number;
+  strongestDelta: number;
+};
+
+type OutcomeComparison = {
+  fileName: string;
+  before: number;
+  after: number;
+  change: number;
+};
+
+const CREATOR_MEMORY_KEY = 'retentiondna.creator-memory.v1';
 
 const SAMPLE_TRANSCRIPT: TranscriptLine[] = [
   {
@@ -96,6 +135,7 @@ const FALLBACK_SIGNAL: RetentionSignal = {
   delta: -30.5,
   retention: 70,
   severity: 'high',
+  confidence: 0.97,
   title: 'The value arrives too late',
   explanation:
     'Viewer loss accelerates before the first minute, which indicates delayed value, repeated setup, or a promise mismatch.',
@@ -133,27 +173,38 @@ export function RetentionWorkspace() {
   const [transcriptLines, setTranscriptLines] =
     useState<TranscriptLine[]>(SAMPLE_TRANSCRIPT);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [status, setStatus] = useState<'ready' | 'analyzing' | 'repaired'>(
-    'ready',
+  const [workflow, dispatchWorkflow] = useReducer(
+    workflowReducer,
+    initialWorkflowState,
   );
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
-  const [cutMode, setCutMode] = useState<'original' | 'better'>('original');
+  const [exportState, setExportState] = useState<
+    'idle' | 'hashing' | 'done' | 'error'
+  >('idle');
+  const [creatorMemory, setCreatorMemory] = useState<CreatorMemoryEntry[]>([]);
+  const [outcome, setOutcome] = useState<OutcomeComparison | null>(null);
+  const [outcomeError, setOutcomeError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
+  const promotionPhase = useRef<'idle' | 'teaser' | 'main'>('idle');
+  const { phase: status, progress, error, cutMode } = workflow;
 
   const selected =
     signals.find((signal) => signal.id === selectedId) ??
     signals[0] ??
     FALLBACK_SIGNAL;
   const transcript = useMemo(
-    () => transcriptAround(selected.time, transcriptLines),
+    () => alignedTranscriptWindow(selected.time, transcriptLines),
     [selected.time, transcriptLines],
   );
   const evidence = useMemo(
     () =>
-      evidenceFor(selected, videoUrl.startsWith('/demo/'), transcript.length),
-    [selected, videoUrl, transcript.length],
+      evidenceFor(
+        selected,
+        videoUrl.startsWith('/demo/'),
+        transcript,
+        transcriptLines.length > 0,
+      ),
+    [selected, videoUrl, transcript, transcriptLines.length],
   );
   const checkpointPoint = useMemo(
     () =>
@@ -161,6 +212,22 @@ export function RetentionWorkspace() {
       points.at(-1) ?? { time: 0, retention: 0 },
     [duration, points],
   );
+  const creatorInsight = useMemo(
+    () => summarizeCreatorMemory(creatorMemory),
+    [creatorMemory],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(CREATOR_MEMORY_KEY);
+        if (saved) setCreatorMemory(parseCreatorMemory(saved));
+      } catch {
+        // Device-local memory is optional; analysis remains fully functional.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: ModelContext })
@@ -189,8 +256,9 @@ export function RetentionWorkspace() {
             setVideoUrl('/demo/retentiondna-sample.mp4');
             setDuration(100);
             setTranscriptLines(SAMPLE_TRANSCRIPT);
-            setStatus('ready');
-            setCutMode('original');
+            dispatchWorkflow({ type: 'RESET' });
+            promotionPhase.current = 'idle';
+            setOutcome(null);
             return {
               loaded: true,
               points: SAMPLE_RETENTION.length,
@@ -228,20 +296,25 @@ export function RetentionWorkspace() {
   }
 
   async function analyzeUpload() {
-    setError('');
     if (!videoFile || !csvFile) {
-      setError('Add both a video and its retention CSV.');
+      dispatchWorkflow({
+        type: 'ANALYZE_FAILURE',
+        message: 'Add both a video and its audience-retention file.',
+      });
       return;
     }
-    setStatus('analyzing');
-    setProgress(14);
+    dispatchWorkflow({ type: 'ANALYZE_START' });
     let objectUrl = '';
     try {
       objectUrl = URL.createObjectURL(videoFile);
       const videoDuration = await readVideoDuration(objectUrl);
-      setProgress(42);
-      const nextPoints = parseRetentionCsv(csvText, videoDuration);
-      setProgress(72);
+      dispatchWorkflow({ type: 'ANALYZE_PROGRESS', progress: 42 });
+      const nextPoints = parseRetentionInput(
+        csvText,
+        csvFile.name,
+        videoDuration,
+      );
+      dispatchWorkflow({ type: 'ANALYZE_PROGRESS', progress: 72 });
       const nextSignals = detectRetentionSignals(nextPoints);
       if (!nextSignals.length)
         throw new Error(
@@ -256,23 +329,28 @@ export function RetentionWorkspace() {
       setDuration(videoDuration);
       setSourceName(videoFile.name);
       setTranscriptLines(nextTranscript);
-      setCutMode('original');
       setVideoUrl((current) => {
         if (current.startsWith('blob:')) URL.revokeObjectURL(current);
         return objectUrl;
       });
-      setProgress(100);
-      setTimeout(() => setStatus('ready'), 350);
+      rememberCreatorProject(videoFile.name, videoDuration, nextSignals);
+      setOutcome(null);
+      setOutcomeError('');
+      setExportState('idle');
+      promotionPhase.current = 'idle';
+      dispatchWorkflow({ type: 'ANALYZE_PROGRESS', progress: 100 });
+      setTimeout(() => dispatchWorkflow({ type: 'ANALYZE_SUCCESS' }), 350);
       setUploadOpen(false);
     } catch (caught) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : 'Could not analyze these files.',
-      );
-      setStatus('ready');
-      setProgress(0);
+      promotionPhase.current = 'idle';
+      dispatchWorkflow({
+        type: 'ANALYZE_FAILURE',
+        message:
+          caught instanceof Error
+            ? caught.message
+            : 'Could not analyze these files.',
+      });
     }
   }
 
@@ -285,8 +363,11 @@ export function RetentionWorkspace() {
     setVideoUrl('/demo/retentiondna-sample.mp4');
     setDuration(100);
     setTranscriptLines(SAMPLE_TRANSCRIPT);
-    setStatus('ready');
-    setCutMode('original');
+    setOutcome(null);
+    setOutcomeError('');
+    setExportState('idle');
+    promotionPhase.current = 'idle';
+    dispatchWorkflow({ type: 'RESET' });
   }
 
   function previewAt(time: number) {
@@ -298,37 +379,158 @@ export function RetentionWorkspace() {
 
   function togglePlayback() {
     if (!videoRef.current) return;
-    if (videoRef.current.paused) void videoRef.current.play();
-    else videoRef.current.pause();
+    if (videoRef.current.paused) {
+      if (
+        cutMode === 'better' &&
+        selected.repair.action === 'promote' &&
+        promotionPhase.current === 'idle'
+      ) {
+        promotionPhase.current = 'teaser';
+        videoRef.current.currentTime = selected.repair.start;
+      }
+      void videoRef.current.play();
+    } else videoRef.current.pause();
   }
 
   function handleTimeUpdate() {
     const video = videoRef.current;
-    if (!video || cutMode !== 'better' || selected.repair.action !== 'remove')
+    if (!video || cutMode !== 'better') return;
+    if (selected.repair.action === 'remove') {
+      if (
+        video.currentTime >= selected.repair.start &&
+        video.currentTime < selected.repair.end
+      )
+        video.currentTime = selected.repair.end;
       return;
+    }
     if (
-      video.currentTime >= selected.repair.start &&
-      video.currentTime < selected.repair.end
-    )
-      video.currentTime = selected.repair.end;
+      promotionPhase.current === 'teaser' &&
+      video.currentTime >= selected.repair.end
+    ) {
+      promotionPhase.current = 'main';
+      video.currentTime = 0;
+    }
   }
 
   function makeRepair() {
-    setStatus('repaired');
-    setCutMode('better');
-    previewAt(Math.max(0, selected.repair.start - 4));
+    dispatchWorkflow({ type: 'STAGE_REPAIR' });
+    if (selected.repair.action === 'promote') {
+      promotionPhase.current = 'teaser';
+      previewAt(selected.repair.start);
+    } else {
+      promotionPhase.current = 'idle';
+      previewAt(Math.max(0, selected.repair.start - 4));
+    }
   }
 
-  function downloadPlan() {
-    const blob = new Blob(
-      [JSON.stringify(createEditDecisionList(selected, sourceName), null, 2)],
-      { type: 'application/json' },
-    );
-    const anchor = document.createElement('a');
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = `${sourceName.replace(/\.[^.]+$/, '')}-retentiondna-plan.json`;
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
+  function selectCutMode(mode: CutMode) {
+    dispatchWorkflow({ type: 'SET_CUT', cutMode: mode });
+    if (mode === 'original') {
+      promotionPhase.current = 'idle';
+      previewAt(Math.max(0, selected.repair.start - 3));
+    } else if (status === 'repaired') {
+      if (selected.repair.action === 'promote') {
+        promotionPhase.current = 'teaser';
+        previewAt(selected.repair.start);
+      } else previewAt(Math.max(0, selected.repair.start - 3));
+    }
+  }
+
+  function selectSignal(signal: RetentionSignal) {
+    setSelectedId(signal.id);
+    promotionPhase.current = 'idle';
+    setOutcome(null);
+    dispatchWorkflow({ type: 'RESET' });
+    previewAt(signal.time);
+  }
+
+  async function downloadPlan() {
+    setExportState('hashing');
+    try {
+      const sourceBlob = videoUrl.startsWith('/demo/')
+        ? await fetch(videoUrl).then((response) => {
+            if (!response.ok)
+              throw new Error('Could not read the sample video.');
+            return response.blob();
+          })
+        : videoFile;
+      if (!sourceBlob)
+        throw new Error('The source video is no longer available.');
+      const source: SourceIdentity = {
+        name: sourceName,
+        sizeBytes: sourceBlob.size,
+        durationSeconds: Number(duration.toFixed(3)),
+        sha256: await sha256Hex(sourceBlob),
+      };
+      const blob = new Blob(
+        [JSON.stringify(createEditDecisionList(selected, source), null, 2)],
+        { type: 'application/json' },
+      );
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `${sourceName.replace(/\.[^.]+$/, '')}-retentiondna-plan.json`;
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+      setExportState('done');
+    } catch {
+      setExportState('error');
+    }
+  }
+
+  async function onOutcomeChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setOutcomeError('');
+    try {
+      const nextPoints = parseRetentionInput(
+        await file.text(),
+        file.name,
+        duration,
+      );
+      const before = retentionAt(points, selected.time);
+      const after = retentionAt(nextPoints, selected.time);
+      setOutcome({
+        fileName: file.name,
+        before,
+        after,
+        change: after - before,
+      });
+    } catch (caught) {
+      setOutcome(null);
+      setOutcomeError(
+        caught instanceof Error
+          ? caught.message
+          : 'Could not compare this result.',
+      );
+    }
+  }
+
+  function rememberCreatorProject(
+    name: string,
+    projectDuration: number,
+    projectSignals: RetentionSignal[],
+  ) {
+    const strongest = strongestSignal(projectSignals);
+    const entry: CreatorMemoryEntry = {
+      sourceName: name,
+      analyzedAt: new Date().toISOString(),
+      duration: projectDuration,
+      strongestType: strongest.type,
+      strongestTime: strongest.time,
+      strongestDelta: strongest.delta,
+    };
+    setCreatorMemory((current) => {
+      const next = [
+        entry,
+        ...current.filter((item) => item.sourceName !== name),
+      ].slice(0, 12);
+      try {
+        window.localStorage.setItem(CREATOR_MEMORY_KEY, JSON.stringify(next));
+      } catch {
+        // Device-local memory is optional.
+      }
+      return next;
+    });
   }
 
   return (
@@ -390,8 +592,8 @@ export function RetentionWorkspace() {
                 />
                 <FileInput
                   label="Audience retention"
-                  hint="CSV with time + retention columns"
-                  accept=".csv,text/csv"
+                  hint="CSV or official YouTube Analytics JSON"
+                  accept=".csv,.json,text/csv,application/json"
                   file={csvFile}
                   onChange={onCsvChange}
                   icon={<FileChartColumn />}
@@ -454,9 +656,7 @@ export function RetentionWorkspace() {
             <div className="flex items-center gap-2">
               <Tabs
                 value={cutMode}
-                onValueChange={(value) =>
-                  setCutMode(value as 'original' | 'better')
-                }
+                onValueChange={(value) => selectCutMode(value as CutMode)}
               >
                 <TabsList>
                   <TabsTrigger value="original">Original</TabsTrigger>
@@ -471,11 +671,12 @@ export function RetentionWorkspace() {
             </div>
           </div>
           <div className="overflow-hidden rounded-2xl border border-white/9 bg-card shadow-2xl shadow-black/25">
-            <div className="relative aspect-video min-h-[260px] overflow-hidden bg-black">
+            <div className="relative aspect-video overflow-hidden bg-black">
               <video
                 ref={videoRef}
                 src={videoUrl}
-                className="h-full w-full object-cover"
+                className="h-full w-full object-contain"
+                preload="metadata"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onEnded={() => setIsPlaying(false)}
@@ -502,11 +703,11 @@ export function RetentionWorkspace() {
                   <Play className="ml-1 h-6 w-6 fill-white" />
                 )}
               </button>
-              <div className="absolute bottom-4 left-4 rounded-md border border-white/10 bg-black/55 px-2.5 py-1.5 font-mono text-xs text-white/80 backdrop-blur">
+              <div className="absolute bottom-3 left-3 max-w-[70%] truncate rounded-md border border-white/10 bg-black/55 px-2.5 py-1.5 font-mono text-xs text-white/80 backdrop-blur sm:bottom-4 sm:left-4">
                 {sourceName} · {formatTime(duration)}
               </div>
               {videoUrl.startsWith('/demo/') && cutMode === 'original' && (
-                <div className="absolute right-4 top-4 rounded-full border border-amber-300/25 bg-amber-950/85 px-3 py-1.5 text-xs text-amber-100 backdrop-blur">
+                <div className="absolute right-2 top-2 max-w-[calc(100%-1rem)] rounded-full border border-amber-300/25 bg-amber-950/85 px-3 py-1.5 text-center text-xs leading-4 text-amber-100 backdrop-blur sm:right-4 sm:top-4">
                   Synthetic smoke test · alignment only
                 </div>
               )}
@@ -548,8 +749,7 @@ export function RetentionWorkspace() {
                 selectedId={selected.id}
                 duration={duration}
                 onSelect={(signal) => {
-                  setSelectedId(signal.id);
-                  previewAt(signal.time);
+                  selectSignal(signal);
                 }}
               />
             </div>
@@ -610,7 +810,7 @@ export function RetentionWorkspace() {
               <EvidenceCue key={item.label} {...item} />
             ))}
           </div>
-          <div className="my-6 grid grid-cols-3 gap-2">
+          <div className="my-6 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
             <Metric
               label={selected.type === 'dip' ? 'Drop' : 'Lift'}
               value={`${selected.delta > 0 ? '+' : ''}${Math.round(selected.delta)}%`}
@@ -620,6 +820,10 @@ export function RetentionWorkspace() {
             <Metric
               label="Level"
               value={`${Math.round(selected.retention)}%`}
+            />
+            <Metric
+              label="Confidence"
+              value={`${Math.round(selected.confidence * 100)}%`}
             />
           </div>
           <div className="rounded-xl border border-primary/20 bg-primary/[.055] p-4">
@@ -677,30 +881,73 @@ export function RetentionWorkspace() {
                 <div>
                   <p className="text-sm font-medium">Repair staged</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Better-cut preview skips {formatTime(selected.repair.start)}
-                    –{formatTime(selected.repair.end)}.{' '}
+                    {selected.repair.action === 'remove'
+                      ? `The preview skips ${formatTime(selected.repair.start)}–${formatTime(selected.repair.end)}.`
+                      : `The preview opens with a ${formatTime(selected.repair.end - selected.repair.start)} teaser, then plays the full source.`}{' '}
                     {videoUrl.startsWith('/demo/')
-                      ? 'Download the verified synthetic render or export its deterministic edit plan.'
-                      : 'Export the deterministic edit plan for rendering.'}
+                      ? selected.repair.action === 'remove'
+                        ? 'Download the verified synthetic render or export its source-bound edit plan.'
+                        : 'Export the source-bound edit plan to render this promotion locally.'
+                      : 'Export the source-bound edit plan for deterministic local rendering.'}
                   </p>
                 </div>
               </div>
-              {videoUrl.startsWith('/demo/') && (
-                <a
-                  href="/demo/retentiondna-better-cut.mp4"
-                  download="retentiondna-better-cut.mp4"
-                  className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/80"
-                >
-                  <Film className="h-4 w-4" /> Download synthetic render
-                </a>
-              )}
+              <EditComparison
+                duration={duration}
+                signal={selected}
+                activeMode={cutMode}
+                onSelect={selectCutMode}
+              />
+              {videoUrl.startsWith('/demo/') &&
+                selected.repair.action === 'remove' && (
+                  <a
+                    href="/demo/retentiondna-better-cut.mp4"
+                    download="retentiondna-better-cut.mp4"
+                    className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground transition hover:bg-primary/80"
+                  >
+                    <Film className="h-4 w-4" /> Download synthetic render
+                  </a>
+                )}
               <Button
                 variant="outline"
                 className="mt-2 w-full border-primary/20 bg-primary/5 text-primary"
                 onClick={downloadPlan}
+                disabled={exportState === 'hashing'}
               >
-                <Download /> Export edit plan
+                {exportState === 'hashing' ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : exportState === 'done' ? (
+                  <ShieldCheck />
+                ) : (
+                  <Download />
+                )}{' '}
+                {exportState === 'hashing'
+                  ? 'Binding plan to source…'
+                  : exportState === 'done'
+                    ? 'Source-bound plan exported'
+                    : 'Export source-bound plan'}
               </Button>
+              {exportState === 'error' && (
+                <p role="alert" className="mt-2 text-xs text-[#ff9b89]">
+                  The source fingerprint could not be created. Re-select the
+                  video and try again.
+                </p>
+              )}
+              <label className="mt-2 flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm font-medium transition hover:border-primary/30 hover:bg-primary/5">
+                <TrendingUp className="h-4 w-4" /> Compare published result
+                <input
+                  type="file"
+                  accept=".csv,.json,text/csv,application/json"
+                  className="sr-only"
+                  onChange={onOutcomeChange}
+                />
+              </label>
+              {outcome && <OutcomeResult comparison={outcome} />}
+              {outcomeError && (
+                <p role="alert" className="mt-2 text-xs text-[#ff9b89]">
+                  {outcomeError}
+                </p>
+              )}
             </div>
           )}
           <div className="mt-8 border-t border-white/8 pt-5">
@@ -710,7 +957,32 @@ export function RetentionWorkspace() {
             </div>
             <div className="mt-3 flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Evidence coverage</span>
-              <span className="font-mono text-primary">timeline aligned</span>
+              <span className="font-mono text-primary">
+                {
+                  evidence.filter((item) => item.status !== 'unavailable')
+                    .length
+                }
+                /{evidence.length} grounded
+              </span>
+            </div>
+          </div>
+          <div className="mt-5 rounded-xl border border-white/8 bg-card p-4">
+            <div className="flex items-start gap-3">
+              <Database className="mt-0.5 h-4 w-4 shrink-0 text-[#8ed0ff]" />
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium">Creator DNA</p>
+                  <span className="rounded-full bg-[#79c6ff]/10 px-2 py-0.5 font-mono text-[10px] text-[#8ed0ff]">
+                    {creatorMemory.length} local projects
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {creatorInsight}
+                </p>
+                <p className="mt-2 text-[10px] uppercase tracking-wider text-white/35">
+                  Summaries stay on this device · no video or transcript stored
+                </p>
+              </div>
             </div>
           </div>
           <p className="mt-6 text-xs leading-5 text-muted-foreground">
@@ -890,58 +1162,35 @@ function Metric({
     </div>
   );
 }
-function EvidenceCue({
-  label,
-  value,
-  kind,
-}: {
-  label: string;
-  value: string;
-  kind: 'curve' | 'audio' | 'visual';
-}) {
+function EvidenceCue({ label, value, basis, kind, status }: EvidenceCueData) {
   const Icon =
-    kind === 'audio' ? AudioLines : kind === 'visual' ? ScanLine : Activity;
+    kind === 'audio'
+      ? AudioLines
+      : kind === 'visual'
+        ? ScanLine
+        : kind === 'transcript'
+          ? BadgeCheck
+          : Activity;
   return (
     <div className="rounded-lg border border-white/8 bg-white/[.025] p-3">
-      <Icon className="h-4 w-4 text-primary" />
-      <p className="mt-2 truncate text-xs font-medium text-white/85">{value}</p>
-      <p className="mt-1 truncate text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
+      <div className="flex items-center justify-between gap-1">
+        <Icon
+          className={`h-4 w-4 ${status === 'unavailable' ? 'text-white/30' : 'text-primary'}`}
+        />
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${status === 'unavailable' ? 'bg-white/20' : status === 'aligned' ? 'bg-[#79c6ff]' : 'bg-primary'}`}
+          aria-label={status}
+        />
+      </div>
+      <p className="mt-2 text-xs font-medium leading-4 text-white/85">
+        {value}
       </p>
+      <p className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+        {label} · {status}
+      </p>
+      <p className="mt-1 text-[10px] leading-4 text-white/35">{basis}</p>
     </div>
   );
-}
-
-function evidenceFor(
-  signal: RetentionSignal,
-  sample: boolean,
-  transcriptCount: number,
-) {
-  const curve = {
-    label: 'Retention',
-    value: `${signal.delta > 0 ? '+' : ''}${Math.round(signal.delta)} pts`,
-    kind: 'curve' as const,
-  };
-  if (sample && signal.time >= 20 && signal.time <= 35) {
-    return [
-      curve,
-      { label: 'Audio', value: '7.0s silence', kind: 'audio' as const },
-      { label: 'Visual', value: '3 cuts nearby', kind: 'visual' as const },
-    ];
-  }
-  return [
-    curve,
-    {
-      label: 'Transcript',
-      value: transcriptCount ? `${transcriptCount} aligned` : 'Not supplied',
-      kind: 'audio' as const,
-    },
-    {
-      label: 'Visual',
-      value: sample ? 'Scene checked' : 'Browser preview',
-      kind: 'visual' as const,
-    },
-  ];
 }
 function strongestSignal(signals: RetentionSignal[]): RetentionSignal {
   if (!signals.length) return FALLBACK_SIGNAL;
@@ -952,21 +1201,6 @@ function strongestSignal(signals: RetentionSignal[]): RetentionSignal {
         Math.abs(signal.delta) > Math.abs(best.delta) ? signal : best,
       signals[0],
     );
-}
-function transcriptAround(
-  time: number,
-  lines: TranscriptLine[],
-): TranscriptLine[] {
-  if (!lines.length) return [];
-  const found = lines.findIndex(
-    (line) => time >= line.time && time <= line.end,
-  );
-  const activeIndex = Math.max(0, found);
-  const start = Math.max(
-    0,
-    Math.min(activeIndex - 1, Math.max(0, lines.length - 3)),
-  );
-  return lines.slice(start, start + 3);
 }
 function parseTranscriptJson(text: string): TranscriptLine[] {
   const parsed: unknown = JSON.parse(text);
@@ -1016,6 +1250,166 @@ function readVideoDuration(url: string): Promise<number> {
       reject(new Error('The selected video could not be read.'));
     video.src = url;
   });
+}
+
+function EditComparison({
+  duration,
+  signal,
+  activeMode,
+  onSelect,
+}: {
+  duration: number;
+  signal: RetentionSignal;
+  activeMode: CutMode;
+  onSelect: (mode: CutMode) => void;
+}) {
+  const editDuration = signal.repair.end - signal.repair.start;
+  const projectedDuration =
+    signal.repair.action === 'remove'
+      ? duration - editDuration
+      : duration + editDuration;
+  const left = Math.max(
+    0,
+    Math.min(100, (signal.repair.start / duration) * 100),
+  );
+  const width = Math.max(
+    1.5,
+    Math.min(100 - left, (editDuration / duration) * 100),
+  );
+  return (
+    <div className="mt-3 rounded-lg border border-white/8 bg-black/15 p-3">
+      <div className="grid grid-cols-2 gap-2">
+        {(['original', 'better'] as const).map((mode) => {
+          const isActive = activeMode === mode;
+          const modeDuration =
+            mode === 'original' ? duration : projectedDuration;
+          return (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => onSelect(mode)}
+              className={`rounded-lg border px-3 py-2 text-left transition ${isActive ? 'border-primary/35 bg-primary/8' : 'border-white/8 bg-white/[.025] hover:border-white/20'}`}
+            >
+              <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+                {mode === 'original' ? 'Before' : 'After preview'}
+              </span>
+              <span className="mt-1 block font-mono text-sm">
+                {formatTime(modeDuration)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="relative mt-3 h-2 overflow-hidden rounded-full bg-white/8">
+        <div
+          className={`absolute inset-y-0 rounded-full ${signal.repair.action === 'remove' ? 'bg-[#ff7d69]' : 'bg-[#79c6ff]'}`}
+          style={{ left: `${left}%`, width: `${width}%` }}
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+        <span>
+          {signal.repair.action === 'remove'
+            ? 'Removed window'
+            : 'Promoted teaser'}
+        </span>
+        <span className="font-mono text-white/60">
+          {signal.repair.action === 'remove' ? '−' : '+'}
+          {editDuration.toFixed(1)}s
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function OutcomeResult({ comparison }: { comparison: OutcomeComparison }) {
+  const improved = comparison.change > 0;
+  return (
+    <div className="mt-3 rounded-lg border border-[#79c6ff]/20 bg-[#79c6ff]/5 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium">Observed result at this moment</p>
+          <p className="mt-1 max-w-[220px] truncate text-[10px] text-muted-foreground">
+            {comparison.fileName}
+          </p>
+        </div>
+        <span
+          className={`font-mono text-sm ${improved ? 'text-primary' : comparison.change < 0 ? 'text-[#ff9b89]' : 'text-white/60'}`}
+        >
+          {comparison.change > 0 ? '+' : ''}
+          {comparison.change.toFixed(1)} pts
+        </span>
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+        Before {comparison.before.toFixed(1)}% · after{' '}
+        {comparison.after.toFixed(1)}%. This is an observed comparison, not
+        proof that the edit caused the change.
+      </p>
+    </div>
+  );
+}
+
+async function sha256Hex(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    await blob.arrayBuffer(),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+function retentionAt(points: RetentionPoint[], time: number): number {
+  if (!points.length) return 0;
+  if (time <= points[0].time) return points[0].retention;
+  const nextIndex = points.findIndex((point) => point.time >= time);
+  if (nextIndex < 0) return points.at(-1)!.retention;
+  const next = points[nextIndex];
+  const previous = points[nextIndex - 1];
+  const span = next.time - previous.time;
+  if (span <= 0) return next.retention;
+  const progress = (time - previous.time) / span;
+  return previous.retention + (next.retention - previous.retention) * progress;
+}
+
+function parseCreatorMemory(text: string): CreatorMemoryEntry[] {
+  const parsed: unknown = JSON.parse(text);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((item): item is CreatorMemoryEntry => {
+      if (!item || typeof item !== 'object') return false;
+      const candidate = item as Partial<CreatorMemoryEntry>;
+      return (
+        typeof candidate.sourceName === 'string' &&
+        typeof candidate.analyzedAt === 'string' &&
+        typeof candidate.duration === 'number' &&
+        Number.isFinite(candidate.duration) &&
+        (candidate.strongestType === 'dip' ||
+          candidate.strongestType === 'spike') &&
+        typeof candidate.strongestTime === 'number' &&
+        Number.isFinite(candidate.strongestTime) &&
+        typeof candidate.strongestDelta === 'number' &&
+        Number.isFinite(candidate.strongestDelta)
+      );
+    })
+    .slice(0, 12);
+}
+
+function summarizeCreatorMemory(entries: CreatorMemoryEntry[]): string {
+  if (!entries.length)
+    return 'Analyze real projects to reveal recurring early losses and replay-worthy moments.';
+  const earlyLosses = entries.filter(
+    (entry) =>
+      entry.strongestType === 'dip' &&
+      entry.strongestTime <= Math.max(6, entry.duration * 0.35),
+  ).length;
+  const replayWins = entries.filter(
+    (entry) => entry.strongestType === 'spike',
+  ).length;
+  if (earlyLosses > replayWins)
+    return `${earlyLosses} of ${entries.length} projects show their strongest loss early. Test faster proof before adding more context.`;
+  if (replayWins)
+    return `${replayWins} of ${entries.length} projects contain a dominant replay moment worth testing as an opening teaser.`;
+  return `${entries.length} projects observed. Add more uploads before treating any pattern as recurring.`;
 }
 
 declare global {

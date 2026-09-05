@@ -1,13 +1,13 @@
 Creators already know where viewers leave. The hard part is understanding why, and deciding what to change in the next edit. RetentionDNA closes that loop by turning audience behavior into a concrete, reviewable repair.
 
-The input is deliberately simple: a draft video, its audience-retention CSV, and an optional timestamped transcript. Files remain in the browser, and RetentionDNA also understands YouTube Analytics ratio exports. The built-in sample keeps this walkthrough completely reproducible.
+The input is deliberately simple: a draft video, its audience-retention CSV or saved YouTube Analytics response, and an optional timestamped transcript. Files remain in the browser. The built-in sample keeps this walkthrough completely reproducible.
 
 The curve immediately surfaces the strongest moments. A replay spike at one minute fifteen identifies a payoff worth promoting earlier. The largest loss happens at twenty-five seconds: a thirty-point drop before the first useful step.
 
-RetentionDNA does not pretend the curve proves a cause. It aligns independent evidence around the timestamp. Here, FFmpeg measures seven point zero two two seconds of silence, finds three nearby scene changes, and the transcript shows repeated setup language. Those observations produce a learned editing rule: deliver the first concrete payoff within twenty seconds, then move personal context after it.
+RetentionDNA does not pretend the curve proves a cause. Every card says whether evidence was measured, timestamp-aligned, or unavailable. Here, FFmpeg measures seven point zero two two seconds of silence, finds three nearby scene changes, and the transcript shows repeated setup language. The recommendation stays reviewable and duration-aware.
 
-The recommended repair is bounded and inspectable. Creating the better cut switches on a non-destructive preview that skips seconds twelve through twenty-eight, bridging the promise directly into step one. The original file is never changed.
+The recommended repair is bounded and inspectable. Creating the better cut switches on a non-destructive preview that skips seconds twelve through twenty-eight and shows the projected duration. A replay spike uses a different operation: it opens with a short teaser from the replayed moment, then returns to the full source. The original file is never changed.
 
-Finally, the creator exports an auditable edit plan with timestamps, reasons, and evidence references. A deterministic local FFmpeg renderer validates the numbers, merges overlaps, and refuses any plan that removes more than thirty-five percent of the source. Generated text is never executed as a shell command.
+Finally, the creator exports an auditable edit plan with timestamps, reasons, and evidence references. The plan is bound to the exact source by size, duration, and SHA-256. A deterministic local FFmpeg renderer rejects unknown actions, the wrong source, and any plan that removes more than thirty-five percent. Generated text is never executed as a shell command.
 
-RetentionDNA is a working creator workflow, not a mockup: analyze, inspect, repair, preview, export, and render. It learns from what an audience actually watched, while keeping every recommendation honest and under the creator's control.
+After publishing, a later curve can be compared at the same timestamp. Creator DNA keeps only small pattern summaries on this device—not videos or transcripts. RetentionDNA is a working creator workflow: analyze, inspect, repair, compare, export, and render, with every recommendation under the creator's control.

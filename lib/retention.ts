@@ -3,6 +3,15 @@ export type RetentionPoint = {
   retention: number;
 };
 
+export type EditAction = 'remove' | 'promote';
+
+export type SourceIdentity = {
+  name: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  sha256: string;
+};
+
 export type RetentionSignal = {
   id: string;
   type: 'dip' | 'spike';
@@ -11,6 +20,7 @@ export type RetentionSignal = {
   delta: number;
   retention: number;
   severity: 'high' | 'medium';
+  confidence: number;
   title: string;
   explanation: string;
   learnedRule: string;
@@ -18,7 +28,7 @@ export type RetentionSignal = {
     label: string;
     start: number;
     end: number;
-    action: 'remove' | 'promote';
+    action: EditAction;
     description: string;
   };
 };
@@ -63,11 +73,23 @@ export function parseRetentionCsv(
     );
   }
 
+  const timeHeader = headers[timeIndex];
+  const retentionHeader = headers[retentionIndex];
+  const normalizedTime = ['elapsedvideotimeratio', 'elapsed ratio'].includes(
+    timeHeader,
+  );
+  const ratioRetention = ['audiencewatchratio', 'watch ratio'].includes(
+    retentionHeader,
+  );
+
   const raw = lines.slice(1).map((line) => {
     const cells = splitCsvLine(line);
     return {
-      time: parseTime(cells[timeIndex]?.trim() ?? ''),
-      retention: parseRatio(cells[retentionIndex]?.trim() ?? ''),
+      time: parseTime(cells[timeIndex]?.trim() ?? '', normalizedTime),
+      retention: parseRetentionValue(
+        cells[retentionIndex]?.trim() ?? '',
+        ratioRetention,
+      ),
     };
   });
 
@@ -85,10 +107,7 @@ export function parseRetentionCsv(
     );
   }
 
-  const looksNormalized =
-    Math.max(...raw.map((point) => point.time)) <= 1 &&
-    raw.some((point) => point.time > 0 && point.time < 1);
-  if (looksNormalized && !duration) {
+  if (normalizedTime && !duration) {
     throw new Error(
       'Normalized elapsedVideoTimeRatio data needs a video so timestamps can be calculated.',
     );
@@ -96,9 +115,8 @@ export function parseRetentionCsv(
 
   const points = raw
     .map((point) => ({
-      time: looksNormalized ? point.time * (duration ?? 0) : point.time,
-      retention:
-        point.retention <= 1.5 ? point.retention * 100 : point.retention,
+      time: normalizedTime ? point.time * (duration ?? 0) : point.time,
+      retention: point.retention,
     }))
     .sort((a, b) => a.time - b.time);
   if (
@@ -114,12 +132,81 @@ export function parseRetentionCsv(
   return points;
 }
 
+export function parseRetentionInput(
+  text: string,
+  fileName: string,
+  duration: number,
+): RetentionPoint[] {
+  if (
+    fileName.toLowerCase().endsWith('.json') ||
+    text.trimStart().startsWith('{')
+  )
+    return parseYouTubeAnalyticsReport(text, duration);
+  return parseRetentionCsv(text, duration);
+}
+
+export function parseYouTubeAnalyticsReport(
+  text: string,
+  duration: number,
+): RetentionPoint[] {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error('YouTube Analytics JSON could not be parsed.');
+  }
+  if (!payload || typeof payload !== 'object')
+    throw new Error('YouTube Analytics report must be an object.');
+  const report = payload as { columnHeaders?: unknown; rows?: unknown };
+  if (!Array.isArray(report.columnHeaders) || !Array.isArray(report.rows))
+    throw new Error('YouTube Analytics JSON needs columnHeaders and rows.');
+  const names = report.columnHeaders.map((item) =>
+    item && typeof item === 'object' && 'name' in item
+      ? String((item as { name: unknown }).name)
+      : '',
+  );
+  const elapsedIndex = names.indexOf('elapsedVideoTimeRatio');
+  const watchIndex = names.indexOf('audienceWatchRatio');
+  if (elapsedIndex < 0 || watchIndex < 0)
+    throw new Error(
+      'YouTube Analytics JSON needs elapsedVideoTimeRatio and audienceWatchRatio.',
+    );
+  if (report.rows.length < 2)
+    throw new Error(
+      'YouTube Analytics report needs at least two retention rows.',
+    );
+  const points = report.rows.map((row, index) => {
+    if (!Array.isArray(row))
+      throw new Error(`YouTube Analytics row ${index + 1} must be an array.`);
+    const elapsed = Number(row[elapsedIndex]);
+    const watch = Number(row[watchIndex]);
+    if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > 1)
+      throw new Error(
+        `YouTube Analytics row ${index + 1} has an invalid elapsed ratio.`,
+      );
+    if (!Number.isFinite(watch) || watch < 0)
+      throw new Error(
+        `YouTube Analytics row ${index + 1} has an invalid watch ratio.`,
+      );
+    return { time: elapsed * duration, retention: watch * 100 };
+  });
+  points.sort((a, b) => a.time - b.time);
+  if (
+    points.some(
+      (point, index) => index > 0 && point.time <= points[index - 1].time,
+    )
+  )
+    throw new Error('YouTube Analytics elapsed ratios must be unique.');
+  return points;
+}
+
 export function detectRetentionSignals(
   points: RetentionPoint[],
 ): RetentionSignal[] {
   if (points.length < 4) return [];
   const candidates: RetentionSignal[] = [];
-  const measuredDuration = Math.max(0, points.at(-1)!.time - points[0].time);
+  const videoDuration = Math.max(points.at(-1)!.time, 0.1);
+  const measuredDuration = Math.max(0, videoDuration - points[0].time);
   const maximumRepairDuration = Math.max(2, measuredDuration * 0.3);
 
   for (let index = 2; index < points.length - 1; index += 1) {
@@ -143,20 +230,30 @@ export function detectRetentionSignals(
           points[index + 1],
           delta,
           maximumRepairDuration,
+          videoDuration,
         ),
       );
     if (delta >= 7)
       candidates.push(
-        makeSignal('spike', points[index], points[index + 1], delta),
+        makeSignal(
+          'spike',
+          points[index],
+          points[index + 1],
+          delta,
+          maximumRepairDuration,
+          videoDuration,
+        ),
       );
   }
 
+  const dedupeWindow = Math.max(2, Math.min(10, videoDuration * 0.08));
   return candidates
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .filter(
       (signal, index, all) =>
-        all.findIndex((other) => Math.abs(other.time - signal.time) < 10) ===
-        index,
+        all.findIndex(
+          (other) => Math.abs(other.time - signal.time) < dedupeWindow,
+        ) === index,
     )
     .slice(0, 6)
     .sort((a, b) => a.time - b.time);
@@ -171,17 +268,18 @@ export function formatTime(seconds: number): string {
 
 export function createEditDecisionList(
   signal: RetentionSignal,
-  sourceName: string,
+  source: SourceIdentity,
 ) {
   return {
-    schema: 'retentiondna.edit-plan.v1',
-    source: sourceName,
+    schema: 'retentiondna.edit-plan.v2',
+    source,
     generatedAt: new Date().toISOString(),
     evidence: {
       signal: signal.type,
       timestamp: signal.time,
       retention: signal.retention,
       delta: signal.delta,
+      confidence: signal.confidence,
       explanation: signal.explanation,
     },
     operations: [
@@ -203,13 +301,19 @@ function makeSignal(
   next: RetentionPoint,
   delta: number,
   maximumRepairDuration = Number.POSITIVE_INFINITY,
+  videoDuration = next.time,
 ): RetentionSignal {
   const severity = Math.abs(delta) >= 13 ? 'high' : 'medium';
+  const confidence = Math.min(0.97, 0.55 + Math.abs(delta) / 50);
   const window = Math.max(6, Math.min(18, next.time - point.time + 8));
-  const end = point.time + 3;
+  const end = Math.min(videoDuration, point.time + 3);
   const start = Math.max(0, point.time - window, end - maximumRepairDuration);
 
   if (type === 'spike') {
+    const maximumTeaserDuration = Math.min(
+      8,
+      Math.max(1, videoDuration * 0.15),
+    );
     return {
       id: `spike-${Math.round(point.time)}`,
       type,
@@ -218,6 +322,7 @@ function makeSignal(
       delta,
       retention: point.retention,
       severity,
+      confidence,
       title: 'Viewers replayed this moment',
       explanation:
         'A sharp rise suggests this section was especially valuable—or needed a second listen to understand.',
@@ -226,12 +331,23 @@ function makeSignal(
       repair: {
         label: 'Promote the payoff',
         start: point.time,
-        end: Math.min(point.time + 8, next.time + 4),
+        end: Math.min(
+          videoDuration,
+          point.time + maximumTeaserDuration,
+          next.time + 4,
+        ),
         action: 'promote',
         description: 'Create a short opening teaser from the replayed moment.',
       },
     };
   }
+
+  const earlyBoundary = Math.min(60, Math.max(6, videoDuration * 0.35));
+  const isEarly = point.time <= earlyBoundary;
+  const payoffTarget = Math.min(
+    videoDuration,
+    Math.max(2, Math.min(20, Math.round(videoDuration * 0.2))),
+  );
 
   return {
     id: `dip-${Math.round(point.time)}`,
@@ -241,16 +357,14 @@ function makeSignal(
     delta,
     retention: point.retention,
     severity,
-    title:
-      point.time < 60 ? 'The value arrives too late' : 'Momentum breaks here',
-    explanation:
-      point.time < 60
-        ? 'Viewer loss accelerates before the first minute, which usually indicates delayed value, repeated setup, or a promise mismatch.'
-        : 'Viewer loss accelerates inside this section. Review the surrounding explanation for repetition, silence, or an abrupt topic shift.',
-    learnedRule:
-      point.time < 60
-        ? 'Deliver the first concrete payoff within 20 seconds and move personal context after it.'
-        : 'Keep each explanation moving toward a visible payoff and remove repeated setup.',
+    confidence,
+    title: isEarly ? 'Early viewer loss' : 'Momentum breaks here',
+    explanation: isEarly
+      ? 'Viewer loss accelerates early in this video. Review the surrounding promise, pacing, and setup before assigning a cause.'
+      : 'Viewer loss accelerates inside this section. Review the surrounding explanation for repetition, silence, or an abrupt topic shift.',
+    learnedRule: isEarly
+      ? `Test the first concrete payoff by ${formatTime(payoffTarget)}, then compare the next retention curve.`
+      : 'Keep each explanation moving toward a visible payoff and remove repeated setup.',
     repair: {
       label: 'Tighten this section',
       start,
@@ -261,17 +375,24 @@ function makeSignal(
   };
 }
 
-function parseTime(value: string): number {
+function parseTime(value: string, normalized: boolean): number {
   if (/^\d+(?::\d{1,2}){1,2}$/.test(value)) {
     return value
       .split(':')
       .reduce((total, part) => total * 60 + Number(part), 0);
   }
-  return Number(value.replace('%', ''));
+  const cleaned = value.trim();
+  const parsed = Number(cleaned.replace('%', ''));
+  return normalized && cleaned.endsWith('%') ? parsed / 100 : parsed;
 }
 
-function parseRatio(value: string): number {
-  return Number(value.replace('%', '').trim());
+function parseRetentionValue(value: string, ratioHeader: boolean): number {
+  const cleaned = value.trim();
+  const explicitPercent = cleaned.endsWith('%');
+  const parsed = Number(cleaned.replace('%', ''));
+  if (explicitPercent) return parsed;
+  if (ratioHeader) return parsed * 100;
+  return parsed <= 1.5 ? parsed * 100 : parsed;
 }
 
 function splitCsvLine(line: string): string[] {

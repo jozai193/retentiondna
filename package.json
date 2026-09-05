@@ -1,6 +1,6 @@
 {
   "name": "retentiondna",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -9,6 +9,9 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
+    "test": "npm run test:web && npm run test:engine",
+    "test:web": "node --experimental-strip-types lib/retention.test.ts",
+    "test:engine": "python -B -m unittest discover -s engine -p \"test_*.py\"",
     "lint": "oxlint app lib components/ui/button.tsx components/ui/dialog.tsx components/ui/progress.tsx components/ui/tabs.tsx",
     "lint:all": "oxlint",
     "format": "oxfmt"

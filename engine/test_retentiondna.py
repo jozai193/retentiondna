@@ -15,10 +15,11 @@ from retentiondna import (
     probe_duration,
     probe_stream_types,
     render,
+    source_identity,
     transcript_features,
     validate_removals,
 )
-from vretention_benchmark import parse_duration, points_from_svg, svg_path_vertices
+from vretention_benchmark import benchmark, parse_duration, points_from_svg, svg_path_vertices
 from youtube_analytics import points_from_report
 
 
@@ -32,6 +33,18 @@ class RetentionDnaTests(unittest.TestCase):
         csv_path = Path(__file__).parent / "fixtures" / "normalized-retention.csv"
         points = load_retention(csv_path, duration=120)
         self.assertEqual(points[1], Point(60, 72))
+
+    def test_shared_golden_retention_contract(self):
+        fixtures = json.loads(
+            (Path(__file__).parent.parent / "fixtures" / "golden-retention-cases.json").read_text(encoding="utf-8")
+        )
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            for index, fixture in enumerate(fixtures):
+                csv_path = Path(directory) / f"case-{index}.csv"
+                csv_path.write_text(fixture["csv"], encoding="utf-8")
+                points = load_retention(csv_path, duration=fixture["duration"])
+                self.assertEqual([point.time for point in points], fixture["times"], fixture["name"])
+                self.assertEqual([point.retention for point in points], fixture["retention"], fixture["name"])
 
     def test_merges_overlapping_repairs(self):
         operations = [
@@ -115,6 +128,21 @@ class RetentionDnaTests(unittest.TestCase):
         self.assertEqual(parse_duration("PT1M30S"), 90)
         self.assertEqual(parse_duration("45"), 45)
 
+    def test_vretention_benchmark_fails_closed_on_bad_samples(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            dataset = Path(directory) / "youtube.csv"
+            dataset.write_text(
+                "id,duration,retentionCurve,countryCode,categoryId\n"
+                'ok,10,"M0 80 L100 20",US,1\n'
+                'bad,10,"not-a-path",IN,2\n',
+                encoding="utf-8",
+            )
+            result = benchmark(dataset, limit=10, max_error_rate=0.1)
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(result["parsed"], 1)
+            self.assertEqual(result["errors"], 1)
+            self.assertEqual(result["errorExamples"][0]["id"], "bad")
+
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg tools are required")
 class RetentionDnaIntegrationTests(unittest.TestCase):
@@ -135,8 +163,10 @@ class RetentionDnaIntegrationTests(unittest.TestCase):
             plan.write_text(
                 json.dumps(
                     {
-                        "schema": "retentiondna.edit-plan.v1",
+                        "schema": "retentiondna.edit-plan.v2",
+                        "source": source_identity(source),
                         "operations": [{"action": "remove", "start": 2, "end": 3}],
+                        "disclaimer": "test plan",
                     }
                 ),
                 encoding="utf-8",
@@ -146,6 +176,62 @@ class RetentionDnaIntegrationTests(unittest.TestCase):
 
             self.assertEqual(probe_stream_types(output), {"video"})
             self.assertAlmostEqual(probe_duration(output), 5.0, delta=0.15)
+
+    def test_renders_promoted_teaser_and_verifies_source_identity(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source.mp4"
+            promoted = root / "promoted.mp4"
+            plan = root / "promote.json"
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24:duration=6",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(source),
+                ],
+                check=True,
+            )
+            payload = {
+                "schema": "retentiondna.edit-plan.v2",
+                "source": source_identity(source),
+                "operations": [{"action": "promote", "start": 2, "end": 3, "reason": "replay spike"}],
+                "disclaimer": "test plan",
+            }
+            plan.write_text(json.dumps(payload), encoding="utf-8")
+            render(source, plan, promoted)
+            self.assertAlmostEqual(probe_duration(promoted), 7.0, delta=0.15)
+
+            payload["source"]["sha256"] = "0" * 64
+            plan.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source identity does not match"):
+                render(source, plan, root / "wrong-source.mp4")
+
+    def test_rejects_unsupported_edit_action(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            source = root / "source.mp4"
+            plan = root / "unknown.json"
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12:duration=2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", str(source),
+                ],
+                check=True,
+            )
+            plan.write_text(
+                json.dumps(
+                    {
+                        "schema": "retentiondna.edit-plan.v2",
+                        "source": source_identity(source),
+                        "operations": [{"action": "teleport", "start": 0, "end": 1, "reason": "invalid"}],
+                        "disclaimer": "test plan",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "unsupported edit-plan actions"):
+                render(source, plan, root / "output.mp4")
 
     def test_detects_real_silence_in_audio_video(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:

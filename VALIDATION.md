@@ -14,10 +14,12 @@ After downloading `youtube.csv` from the dataset's official repository, run a bo
 python -B engine/vretention_benchmark.py `
   --dataset C:\path\to\youtube.csv `
   --limit 1000 `
+  --seed 20260905 `
+  --max-error-rate 0.1 `
   --out artifacts/vretention-summary.json
 ```
 
-The clean-room adapter parses the documented SVG path field, normalizes it to the video timeline, and reports parsing errors, detected dips/spikes, and category/country coverage. Its report explicitly labels the result as signal-extraction testing rather than outcome validation.
+The clean-room adapter uses deterministic reservoir sampling rather than the dataset's first rows, parses the documented SVG path field, normalizes it to the video timeline, and reports representative failures, error rate, detected dips/spikes, and category/country coverage. It exits nonzero when no rows parse or the configured error-rate threshold is exceeded. Its report explicitly labels the result as signal-extraction testing rather than outcome validation.
 
 ## 2. Real media compatibility
 
@@ -28,7 +30,7 @@ python -B engine/validate_media.py submission/retentiondna-demo.mp4 `
   --out artifacts/media-validation.json
 ```
 
-Automated integration tests additionally cover video with no audio, measured silence, invalid intervals, and the 35% destructive-edit safety limit.
+Automated integration tests additionally cover video with no audio, measured silence, invalid intervals, the 35% destructive-edit safety limit, real replay-teaser rendering, unknown-operation rejection, and source fingerprint verification.
 
 ## 3. Official creator analytics
 
@@ -45,6 +47,12 @@ python -B engine/youtube_analytics.py `
 
 When a channel is available, the remaining connector only needs to obtain consent, request the single-video report, determine video duration, and pass the response into this tested boundary.
 
+The hosted workspace can also import a saved official `reports.query` JSON response directly. OAuth secrets and tokens remain outside the project.
+
+## 4. Cross-runtime contract
+
+The browser and Python engine run the same fixtures from `fixtures/golden-retention-cases.json`. These cases distinguish explicit percentages, generic decimal ratios, official YouTube ratio headers, and short second-based timelines. Edit plans use the versioned schema in `contracts/retentiondna.edit-plan.v2.schema.json` and bind to the exact source by size, duration, and SHA-256.
+
 ## Claims we can and cannot make
 
 | Claim                                                           | Current evidence                                                    |
@@ -52,5 +60,6 @@ When a channel is available, the remaining connector only needs to obtain consen
 | RetentionDNA parses official API-shaped reports safely          | Automated fixtures and validation tests                             |
 | Curve processing survives varied real YouTube replay shapes     | External vRetention benchmark harness; dataset run pending          |
 | The media pipeline handles real spoken/visual footage           | Narrated product walkthrough audit                                  |
-| Deterministic cuts preserve the source and obey safety limits   | FFmpeg integration tests                                            |
+| Deterministic cuts and teaser promotions obey safety limits    | FFmpeg integration and source-identity tests                        |
+| Browser and engine agree on retention units                    | Shared golden fixture corpus                                        |
 | A recommendation improves a creator's future audience retention | Requires creator-owned A/B or before/after uploads; not yet claimed |

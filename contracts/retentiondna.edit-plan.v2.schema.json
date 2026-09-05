@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://retentiondna.local/contracts/retentiondna.edit-plan.v2.schema.json",
+  "title": "RetentionDNA source-bound edit plan",
+  "type": "object",
+  "required": ["schema", "source", "operations", "disclaimer"],
+  "properties": {
+    "schema": { "const": "retentiondna.edit-plan.v2" },
+    "source": {
+      "type": "object",
+      "required": ["name", "sizeBytes", "durationSeconds", "sha256"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": ["action", "start", "end", "reason"],
+        "properties": {
+          "action": { "enum": ["remove", "promote"] },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 },
+          "reason": { "type": "string", "minLength": 1 },
+          "evidenceRefs": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "generatedAt": { "type": "string" },
+    "analysis": { "type": "object" },
+    "evidence": {},
+    "disclaimer": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

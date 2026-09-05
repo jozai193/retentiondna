@@ -2,13 +2,15 @@
 
 No cloud service is required. The analyzer aligns timestamped audience-retention
 data with a transcript and emits an auditable edit plan. The renderer applies
-safe remove operations without asking an LLM to construct shell commands.
+validated remove and payoff-promotion operations without executing generated
+shell commands.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import os
@@ -56,12 +58,19 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
     if not time_key or not retention_key:
         raise ValueError("expected time/timestamp and retention/audienceWatchRatio columns")
 
-    parsed = [Point(parse_time(row[time_key]), parse_number(row[retention_key])) for row in rows]
+    normalized_time = time_key.strip().lower() in {"elapsedvideotimeratio", "elapsed ratio"}
+    ratio_retention = retention_key.strip().lower() in {"audiencewatchratio", "watch ratio"}
+    parsed = [
+        Point(
+            parse_time(row[time_key], normalized=normalized_time),
+            parse_retention_value(row[retention_key], ratio_header=ratio_retention),
+        )
+        for row in rows
+    ]
     if any(point.time < 0 for point in parsed):
         raise ValueError("retention timestamps cannot be negative")
     if any(point.retention < 0 for point in parsed):
         raise ValueError("retention values cannot be negative")
-    normalized_time = max(point.time for point in parsed) <= 1 and any(0 < point.time < 1 for point in parsed)
     if normalized_time and duration is None:
         raise ValueError("elapsedVideoTimeRatio input requires a video duration")
 
@@ -69,7 +78,7 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
         [
             Point(
                 point.time * duration if normalized_time and duration else point.time,
-                point.retention * 100 if point.retention <= 1.5 else point.retention,
+                point.retention,
             )
             for point in parsed
         ],
@@ -120,6 +129,7 @@ def detect_silences(video: Path, noise: str = "-38dB", minimum_duration: float =
         ],
         capture_output=True,
         text=True,
+        check=True,
     )
     return parse_silence_log(completed.stderr)
 
@@ -148,6 +158,7 @@ def detect_scene_changes(video: Path, threshold: float = 0.03) -> list[float]:
         ],
         capture_output=True,
         text=True,
+        check=True,
     )
     return sorted({round(float(value), 3) for value in re.findall(r"pts_time:([0-9.]+)", completed.stderr)})
 
@@ -196,6 +207,7 @@ def build_plan(
     silences: list[Silence] | None = None,
     scene_changes: list[float] | None = None,
 ) -> dict:
+    video_duration = probe_duration(video)
     transcript = []
     if transcript_path:
         transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
@@ -208,16 +220,25 @@ def build_plan(
     operations = []
     evidence = []
     strongest_dip = min((signal for signal in signals if signal.kind == "dip"), key=lambda signal: signal.delta, default=None)
+    strongest_spike = max((signal for signal in signals if signal.kind == "spike"), key=lambda signal: signal.delta, default=None)
+    primary_signal = strongest_dip or strongest_spike
     for signal in signals:
         nearby = [item for item in features if item["start"] - 6 <= signal.time <= item["end"] + 6]
         nearby_silences = [asdict(item) for item in silences if item.end >= signal.time - 20 and item.start <= signal.time + 5]
         nearby_scenes = [timestamp for timestamp in scene_changes if signal.time - 20 <= timestamp <= signal.time + 5]
         confidence = min(0.98, 0.58 + min(abs(signal.delta), 20) / 100 + (0.12 if nearby else 0) + (0.12 if nearby_silences else 0))
-        if signal == strongest_dip:
-            start, end, reason = recommend_removal(signal, nearby, silences)
+        if signal == primary_signal:
+            if signal.kind == "dip":
+                start, end, reason = recommend_removal(signal, nearby, silences, video_duration)
+                action = "remove"
+            else:
+                maximum_teaser = min(8.0, max(1.0, video_duration * 0.15))
+                start, end = signal.time, min(video_duration, signal.time + maximum_teaser)
+                reason = "prepend a short teaser from the strongest measured replay spike"
+                action = "promote"
             operations.append(
                 {
-                    "action": "remove",
+                    "action": action,
                     "start": round(start, 3),
                     "end": round(end, 3),
                     "reason": reason,
@@ -237,8 +258,8 @@ def build_plan(
         )
 
     return {
-        "schema": "retentiondna.edit-plan.v1",
-        "source": str(video),
+        "schema": "retentiondna.edit-plan.v2",
+        "source": source_identity(video, video_duration),
         "analysis": {
             "retentionPoints": len(points),
             "silencesDetected": len(silences),
@@ -246,12 +267,17 @@ def build_plan(
             "transcriptSegments": len(features),
         },
         "evidence": evidence,
-        "operations": non_overlapping_removals(operations),
+        "operations": operations,
         "disclaimer": "Evidence-informed edits do not guarantee future audience retention.",
     }
 
 
-def recommend_removal(signal: Signal, nearby_transcript: list[dict], silences: list[Silence]) -> tuple[float, float, str]:
+def recommend_removal(
+    signal: Signal,
+    nearby_transcript: list[dict],
+    silences: list[Silence],
+    duration: float,
+) -> tuple[float, float, str]:
     window_start, window_end = max(0.0, signal.time - 20.0), signal.time + 3.0
     nearby_silence = max(
         (item for item in silences if item.end >= window_start and item.start <= window_end),
@@ -265,17 +291,29 @@ def recommend_removal(signal: Signal, nearby_transcript: list[dict], silences: l
     if nearby_silence and transcript_candidate:
         end = min(signal.time + 5.0, max(nearby_silence.end + 1.0, transcript_candidate["end"]))
         start = max(window_start, end - 18.0, min(transcript_candidate["start"], nearby_silence.start - 1.0))
-        return start, max(start + 2.0, end), "tighten repeated setup containing measured silence before the retention drop"
+        start, end = bounded_interval(start, max(start + 2.0, end), duration)
+        return start, end, "tighten repeated setup containing measured silence before the retention drop"
     if nearby_silence:
         start = max(window_start, nearby_silence.start - 1.0)
         end = min(signal.time + 1.0, nearby_silence.end + 1.0)
-        return start, max(start + 2.0, end), "remove measured silence immediately before the retention drop"
+        start, end = bounded_interval(start, max(start + 2.0, end), duration)
+        return start, end, "remove measured silence immediately before the retention drop"
     if transcript_candidate:
         end = min(signal.time + 1.0, transcript_candidate["end"])
         start = max(window_start, end - 18.0)
-        return start, max(start + 2.0, end), "tighten the transcript segment aligned to the strongest retention decline"
+        start, end = bounded_interval(start, max(start + 2.0, end), duration)
+        return start, end, "tighten the transcript segment aligned to the strongest retention decline"
     start = max(0.0, signal.time - 18.0)
-    return start, max(start + 2.0, signal.time - 2.0), "tighten the window before the strongest measured retention decline"
+    start, end = bounded_interval(start, max(start + 2.0, signal.time - 2.0), duration)
+    return start, end, "tighten the window before the strongest measured retention decline"
+
+
+def bounded_interval(start: float, end: float, duration: float) -> tuple[float, float]:
+    end = min(duration, end)
+    start = max(0.0, min(start, end - min(0.5, duration)))
+    if end <= start:
+        raise ValueError("could not create a safe repair interval inside the source duration")
+    return start, end
 
 
 def render(video: Path, plan_path: Path, output: Path) -> None:
@@ -288,18 +326,24 @@ def render(video: Path, plan_path: Path, output: Path) -> None:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     if not isinstance(plan, dict):
         raise ValueError("edit plan must be a JSON object")
-    if plan.get("schema") != "retentiondna.edit-plan.v1":
+    if plan.get("schema") != "retentiondna.edit-plan.v2":
         raise ValueError("unsupported or missing edit-plan schema")
+    duration = probe_duration(video)
+    validate_source_identity(plan.get("source"), video, duration)
     operations = plan.get("operations", [])
     if not isinstance(operations, list) or any(not isinstance(operation, dict) for operation in operations):
         raise ValueError("edit-plan operations must be an array of objects")
+    if not operations:
+        raise ValueError("edit plan needs at least one operation")
+    unsupported = sorted({str(operation.get("action")) for operation in operations if operation.get("action") not in {"remove", "promote"}})
+    if unsupported:
+        raise ValueError(f"unsupported edit-plan actions: {', '.join(unsupported)}")
     removes = [operation for operation in operations if operation.get("action") == "remove"]
-    if not removes:
-        shutil.copy2(video, output)
-        return
-
-    duration = probe_duration(video)
     removes = validate_removals(removes, duration)
+    promotes = validate_promotions(
+        [operation for operation in operations if operation.get("action") == "promote"],
+        duration,
+    )
     keeps: list[tuple[float, float]] = []
     cursor = 0.0
     for operation in sorted(removes, key=lambda item: float(item["start"])):
@@ -315,7 +359,8 @@ def render(video: Path, plan_path: Path, output: Path) -> None:
     has_audio = "audio" in probe_stream_types(video)
     filters = []
     concat_inputs = []
-    for index, (start, end) in enumerate(keeps):
+    segments = [(float(item["start"]), float(item["end"])) for item in promotes] + keeps
+    for index, (start, end) in enumerate(segments):
         filters.append(f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS[v{index}]")
         if has_audio:
             filters.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[a{index}]")
@@ -324,7 +369,7 @@ def render(video: Path, plan_path: Path, output: Path) -> None:
             concat_inputs.append(f"[v{index}]")
     filters.append(
         "".join(concat_inputs)
-        + (f"concat=n={len(keeps)}:v=1:a=1[outv][outa]" if has_audio else f"concat=n={len(keeps)}:v=1:a=0[outv]")
+        + (f"concat=n={len(segments)}:v=1:a=1[outv][outa]" if has_audio else f"concat=n={len(segments)}:v=1:a=0[outv]")
     )
 
     command = [
@@ -355,6 +400,53 @@ def validate_removals(removes: list[dict], duration: float) -> list[dict]:
     if removed_duration > duration * 0.35:
         raise ValueError("edit plan removes more than 35% of the source; manual review required")
     return validated
+
+
+def validate_promotions(promotes: list[dict], duration: float) -> list[dict]:
+    if len(promotes) > 1:
+        raise ValueError("edit plan may promote at most one teaser")
+    parsed: list[dict] = []
+    maximum_duration = min(12.0, max(2.0, duration * 0.2))
+    for operation in promotes:
+        try:
+            start, end = float(operation["start"]), float(operation["end"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("promote operations need numeric start and end timestamps") from error
+        teaser_duration = end - start
+        if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start or end > duration:
+            raise ValueError(f"unsafe promote interval {start:g}-{end:g} for {duration:g}s source")
+        if teaser_duration > maximum_duration:
+            raise ValueError(f"promoted teaser exceeds the {maximum_duration:g}s safety limit")
+        parsed.append({**operation, "start": start, "end": end})
+    return parsed
+
+
+def source_identity(video: Path, duration: float | None = None) -> dict:
+    resolved_duration = probe_duration(video) if duration is None else duration
+    digest = hashlib.sha256()
+    with video.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "name": video.name,
+        "sizeBytes": video.stat().st_size,
+        "durationSeconds": round(resolved_duration, 3),
+        "sha256": digest.hexdigest(),
+    }
+
+
+def validate_source_identity(identity: object, video: Path, duration: float) -> None:
+    if not isinstance(identity, dict):
+        raise ValueError("edit plan needs a source identity object")
+    expected = source_identity(video, duration)
+    try:
+        size = int(identity["sizeBytes"])
+        plan_duration = float(identity["durationSeconds"])
+        digest = str(identity["sha256"]).lower()
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("source identity needs sizeBytes, durationSeconds, and sha256") from error
+    if size != expected["sizeBytes"] or abs(plan_duration - duration) > 0.15 or digest != expected["sha256"]:
+        raise ValueError("edit plan source identity does not match the selected video")
 
 
 def probe_duration(video: Path) -> float:
@@ -394,7 +486,7 @@ def non_overlapping_removals(operations: Iterable[dict]) -> list[dict]:
     return result
 
 
-def parse_time(value: str) -> float:
+def parse_time(value: str, normalized: bool = False) -> float:
     cleaned = value.strip()
     if ":" in cleaned:
         total = 0.0
@@ -403,6 +495,8 @@ def parse_time(value: str) -> float:
         number = total
     else:
         number = float(cleaned.rstrip("%"))
+        if normalized and cleaned.endswith("%"):
+            number /= 100
     if not math.isfinite(number):
         raise ValueError("retention timestamps must be finite")
     return number
@@ -415,6 +509,16 @@ def parse_number(value: str) -> float:
     return number
 
 
+def parse_retention_value(value: str, ratio_header: bool = False) -> float:
+    cleaned = value.strip()
+    number = parse_number(cleaned)
+    if cleaned.endswith("%"):
+        return number
+    if ratio_header:
+        return number * 100
+    return number * 100 if number <= 1.5 else number
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Analyze retention signals and render evidence-informed video edits")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -423,7 +527,7 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--retention", type=Path, required=True)
     analyze.add_argument("--transcript", type=Path)
     analyze.add_argument("--out", type=Path, required=True)
-    render_parser = subparsers.add_parser("render", help="apply safe remove operations with ffmpeg")
+    render_parser = subparsers.add_parser("render", help="apply validated remove and promote operations with ffmpeg")
     render_parser.add_argument("--video", type=Path, required=True)
     render_parser.add_argument("--plan", type=Path, required=True)
     render_parser.add_argument("--out", type=Path, required=True)
