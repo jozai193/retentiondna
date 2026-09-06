@@ -28,6 +28,8 @@ import {
   Sparkles,
   ScanLine,
   ShieldCheck,
+  ThumbsDown,
+  ThumbsUp,
   TrendingUp,
   Upload,
   WandSparkles,
@@ -47,10 +49,16 @@ import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   createEditDecisionList,
+  CONTENT_PROFILES,
+  contentProfileLabel,
   detectRetentionSignals,
   formatTime,
+  inferContentProfile,
+  momentLabel,
   parseRetentionInput,
   SAMPLE_RETENTION,
+  type ContentProfile,
+  type FeedbackPreference,
   type RetentionPoint,
   type RetentionSignal,
   type SourceIdentity,
@@ -75,6 +83,7 @@ type CreatorMemoryEntry = {
   strongestType: 'dip' | 'spike';
   strongestTime: number;
   strongestDelta: number;
+  profile?: ContentProfile;
 };
 
 type OutcomeComparison = {
@@ -86,7 +95,17 @@ type OutcomeComparison = {
 
 type SourceMode = 'acau' | 'synthetic' | 'upload';
 
+type ProfileMode = 'auto' | ContentProfile;
+
+type RecommendationFeedback = {
+  key: string;
+  profile: ContentProfile;
+  verdict: 'accepted' | 'rejected';
+  recordedAt: string;
+};
+
 const CREATOR_MEMORY_KEY = 'retentiondna.creator-memory.v1';
+const RECOMMENDATION_FEEDBACK_KEY = 'retentiondna.recommendation-feedback.v1';
 
 const SAMPLE_TRANSCRIPT: TranscriptLine[] = [
   {
@@ -140,6 +159,9 @@ const FALLBACK_SIGNAL: RetentionSignal = {
   retention: 70,
   severity: 'high',
   confidence: 0.97,
+  profile: 'general',
+  momentRole: 'setup',
+  threshold: 7,
   title: 'The value arrives too late',
   explanation:
     'Viewer loss accelerates before the first minute, which indicates delayed value, repeated setup, or a promise mismatch.',
@@ -157,7 +179,7 @@ const FALLBACK_SIGNAL: RetentionSignal = {
 
 export function RetentionWorkspace() {
   const initialSignals = useMemo(
-    () => detectRetentionSignals(ACAU_CASE.points),
+    () => detectRetentionSignals(ACAU_CASE.points, { profile: 'documentary' }),
     [],
   );
   const [points, setPoints] = useState<RetentionPoint[]>(ACAU_CASE.points);
@@ -168,6 +190,8 @@ export function RetentionWorkspace() {
     strongestSignal(initialSignals).id,
   );
   const [sourceMode, setSourceMode] = useState<SourceMode>('acau');
+  const [profileMode, setProfileMode] = useState<ProfileMode>('auto');
+  const [profile, setProfile] = useState<ContentProfile>('documentary');
   const [sourceName, setSourceName] = useState<string>(ACAU_CASE.title);
   const [videoUrl, setVideoUrl] = useState('');
   const [duration, setDuration] = useState<number>(ACAU_CASE.durationSeconds);
@@ -188,6 +212,9 @@ export function RetentionWorkspace() {
     'idle' | 'hashing' | 'done' | 'error'
   >('idle');
   const [creatorMemory, setCreatorMemory] = useState<CreatorMemoryEntry[]>([]);
+  const [recommendationFeedback, setRecommendationFeedback] = useState<
+    RecommendationFeedback[]
+  >([]);
   const [outcome, setOutcome] = useState<OutcomeComparison | null>(null);
   const [outcomeError, setOutcomeError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -220,15 +247,29 @@ export function RetentionWorkspace() {
     [duration, points],
   );
   const creatorInsight = useMemo(
-    () => summarizeCreatorMemory(creatorMemory),
-    [creatorMemory],
+    () => summarizeCreatorMemory(creatorMemory, recommendationFeedback),
+    [creatorMemory, recommendationFeedback],
   );
+  const feedbackKey = `${sourceName}|${profile}|${selected.type}|${Math.round(selected.time)}`;
+  const selectedFeedback = recommendationFeedback.find(
+    (item) => item.key === feedbackKey,
+  );
+  const inferredProfile = inferContentProfile({
+    sourceName,
+    duration,
+    transcript: transcriptLines,
+  });
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
         const saved = window.localStorage.getItem(CREATOR_MEMORY_KEY);
         if (saved) setCreatorMemory(parseCreatorMemory(saved));
+        const savedFeedback = window.localStorage.getItem(
+          RECOMMENDATION_FEEDBACK_KEY,
+        );
+        if (savedFeedback)
+          setRecommendationFeedback(parseRecommendationFeedback(savedFeedback));
       } catch {
         // Device-local memory is optional; analysis remains fully functional.
       }
@@ -255,11 +296,15 @@ export function RetentionWorkspace() {
           },
           annotations: { readOnlyHint: false, untrustedContentHint: false },
           execute: async () => {
-            const nextSignals = detectRetentionSignals(ACAU_CASE.points);
+            const nextSignals = detectRetentionSignals(ACAU_CASE.points, {
+              profile: 'documentary',
+            });
             setPoints(ACAU_CASE.points);
             setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
             setSelectedId(strongestSignal(nextSignals).id);
             setSourceMode('acau');
+            setProfileMode('auto');
+            setProfile('documentary');
             setSourceName(ACAU_CASE.title);
             setVideoUrl('');
             setDuration(ACAU_CASE.durationSeconds);
@@ -325,19 +370,33 @@ export function RetentionWorkspace() {
         videoDuration,
       );
       dispatchWorkflow({ type: 'ANALYZE_PROGRESS', progress: 72 });
-      const nextSignals = detectRetentionSignals(nextPoints);
-      if (!nextSignals.length)
-        throw new Error(
-          'No meaningful dips or spikes were detected in this retention curve.',
-        );
       const nextTranscript = transcriptFile
         ? parseTranscriptJson(await transcriptFile.text())
         : [];
+      const nextProfile = inferContentProfile({
+        sourceName: videoFile.name,
+        duration: videoDuration,
+        transcript: nextTranscript,
+      });
+      const nextSignals = detectRetentionSignals(nextPoints, {
+        profile: nextProfile,
+        transcript: nextTranscript,
+        feedbackPreference: feedbackPreference(
+          recommendationFeedback,
+          nextProfile,
+        ),
+      });
+      if (!nextSignals.length)
+        throw new Error(
+          'No meaningful dips or spikes were detected against this video’s adaptive baseline.',
+        );
       setPoints(nextPoints);
       setSignals(nextSignals);
       setSelectedId(strongestSignal(nextSignals).id);
       setDuration(videoDuration);
       setSourceMode('upload');
+      setProfileMode('auto');
+      setProfile(nextProfile);
       setSourceName(videoFile.name);
       setTranscriptLines(nextTranscript);
       setVideoUrl((current) => {
@@ -366,11 +425,19 @@ export function RetentionWorkspace() {
   }
 
   function loadAcauCase() {
-    const nextSignals = detectRetentionSignals(ACAU_CASE.points);
+    const nextSignals = detectRetentionSignals(ACAU_CASE.points, {
+      profile: 'documentary',
+      feedbackPreference: feedbackPreference(
+        recommendationFeedback,
+        'documentary',
+      ),
+    });
     setPoints(ACAU_CASE.points);
     setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
     setSelectedId(strongestSignal(nextSignals).id);
     setSourceMode('acau');
+    setProfileMode('auto');
+    setProfile('documentary');
     setSourceName(ACAU_CASE.title);
     setVideoUrl('');
     setDuration(ACAU_CASE.durationSeconds);
@@ -386,11 +453,20 @@ export function RetentionWorkspace() {
   }
 
   function loadSyntheticFixture() {
-    const nextSignals = detectRetentionSignals(SAMPLE_RETENTION);
+    const nextSignals = detectRetentionSignals(SAMPLE_RETENTION, {
+      profile: 'tutorial',
+      transcript: SAMPLE_TRANSCRIPT,
+      feedbackPreference: feedbackPreference(
+        recommendationFeedback,
+        'tutorial',
+      ),
+    });
     setPoints(SAMPLE_RETENTION);
     setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
     setSelectedId(strongestSignal(nextSignals).id);
     setSourceMode('synthetic');
+    setProfileMode('auto');
+    setProfile('tutorial');
     setSourceName('creator-workflow-draft.mp4');
     setVideoUrl('/demo/retentiondna-sample.mp4');
     setDuration(100);
@@ -481,6 +557,61 @@ export function RetentionWorkspace() {
     previewAt(signal.time);
   }
 
+  function onProfileChange(event: ChangeEvent<HTMLSelectElement>) {
+    const nextMode = event.target.value as ProfileMode;
+    const nextProfile =
+      nextMode === 'auto'
+        ? inferContentProfile({
+            sourceName,
+            duration,
+            transcript: transcriptLines,
+          })
+        : nextMode;
+    const nextSignals = detectRetentionSignals(points, {
+      profile: nextProfile,
+      transcript: transcriptLines,
+      feedbackPreference: feedbackPreference(
+        recommendationFeedback,
+        nextProfile,
+      ),
+    });
+    setProfileMode(nextMode);
+    setProfile(nextProfile);
+    setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
+    setSelectedId(strongestSignal(nextSignals).id);
+    setOutcome(null);
+    promotionPhase.current = 'idle';
+    dispatchWorkflow({ type: 'RESET' });
+  }
+
+  function recordRecommendationFeedback(verdict: 'accepted' | 'rejected') {
+    const entry: RecommendationFeedback = {
+      key: feedbackKey,
+      profile,
+      verdict,
+      recordedAt: new Date().toISOString(),
+    };
+    const next = [
+      entry,
+      ...recommendationFeedback.filter((item) => item.key !== feedbackKey),
+    ].slice(0, 60);
+    setRecommendationFeedback(next);
+    try {
+      window.localStorage.setItem(
+        RECOMMENDATION_FEEDBACK_KEY,
+        JSON.stringify(next),
+      );
+    } catch {
+      // Feedback remains usable for this session when storage is unavailable.
+    }
+    const nextSignals = detectRetentionSignals(points, {
+      profile,
+      transcript: transcriptLines,
+      feedbackPreference: feedbackPreference(next, profile),
+    });
+    setSignals(nextSignals.length ? nextSignals : [FALLBACK_SIGNAL]);
+  }
+
   async function downloadPlan() {
     if (sourceMode === 'acau') return;
     setExportState('hashing');
@@ -556,6 +687,7 @@ export function RetentionWorkspace() {
       strongestType: strongest.type,
       strongestTime: strongest.time,
       strongestDelta: strongest.delta,
+      profile,
     };
     setCreatorMemory((current) => {
       const next = [
@@ -701,7 +833,29 @@ export function RetentionWorkspace() {
                 Why viewers left—and what to change next
               </h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[.035] px-2.5 text-xs text-muted-foreground">
+                <span className="hidden sm:inline">Content</span>
+                <select
+                  aria-label="Content profile"
+                  value={profileMode}
+                  onChange={onProfileChange}
+                  className="max-w-36 bg-transparent font-medium text-white outline-none"
+                >
+                  <option value="auto" className="bg-[#111516]">
+                    Auto · {contentProfileLabel(inferredProfile)}
+                  </option>
+                  {CONTENT_PROFILES.map((item) => (
+                    <option
+                      key={item.value}
+                      value={item.value}
+                      className="bg-[#111516]"
+                    >
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <Tabs
                 value={cutMode}
                 onValueChange={(value) => selectCutMode(value as CutMode)}
@@ -729,7 +883,7 @@ export function RetentionWorkspace() {
                   src={youtubeEmbedUrl}
                   title={`${ACAU_CASE.title} on YouTube`}
                   className="h-full w-full"
-                  allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allow="accelerometer; autoplay; compute-pressure; encrypted-media; gyroscope; picture-in-picture; web-share"
                   referrerPolicy="strict-origin-when-cross-origin"
                   allowFullScreen
                 />
@@ -914,6 +1068,17 @@ export function RetentionWorkspace() {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             {selected.explanation}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+            <span className="rounded-full border border-[#79c6ff]/20 bg-[#79c6ff]/7 px-2.5 py-1 text-[#8ed0ff]">
+              {contentProfileLabel(profile)} policy
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/[.035] px-2.5 py-1 text-white/65">
+              {momentLabel(selected.momentRole)} moment
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/[.035] px-2.5 py-1 font-mono text-white/65">
+              adaptive gate ±{selected.threshold.toFixed(1)} pts
+            </span>
+          </div>
           <div
             className="mt-5 grid grid-cols-3 gap-2"
             aria-label="Aligned evidence"
@@ -999,6 +1164,50 @@ export function RetentionWorkspace() {
                   preview, export, or render this edit.
                 </p>
               )}
+              <div className="mt-4 border-t border-white/8 pt-3">
+                <p className="text-[10px] uppercase tracking-wider text-white/40">
+                  Does this recommendation fit?
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-pressed={selectedFeedback?.verdict === 'accepted'}
+                    onClick={() => recordRecommendationFeedback('accepted')}
+                    className={
+                      selectedFeedback?.verdict === 'accepted'
+                        ? 'border-primary/35 bg-primary/10 text-primary'
+                        : 'border-white/10 bg-white/[.025]'
+                    }
+                  >
+                    <ThumbsUp /> Useful
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-pressed={selectedFeedback?.verdict === 'rejected'}
+                    onClick={() => recordRecommendationFeedback('rejected')}
+                    className={
+                      selectedFeedback?.verdict === 'rejected'
+                        ? 'border-[#ff7d69]/35 bg-[#ff7d69]/8 text-[#ff9b89]'
+                        : 'border-white/10 bg-white/[.025]'
+                    }
+                  >
+                    <ThumbsDown /> Not right
+                  </Button>
+                </div>
+                {selectedFeedback && (
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                    Saved on this device. Future{' '}
+                    {contentProfileLabel(profile).toLowerCase()} suggestions
+                    will favor{' '}
+                    {feedbackPreference(recommendationFeedback, profile) ===
+                    'review-first'
+                      ? 'review before automatic edits.'
+                      : 'actionable edit tests.'}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
           {status === 'repaired' && (
@@ -1060,6 +1269,9 @@ export function RetentionWorkspace() {
                   video and try again.
                 </p>
               )}
+              <p className="mt-3 text-[10px] uppercase tracking-wider text-white/40">
+                Outcome validation
+              </p>
               <label className="mt-2 flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 text-sm font-medium transition hover:border-primary/30 hover:bg-primary/5">
                 <TrendingUp className="h-4 w-4" /> Compare published result
                 <input
@@ -1100,7 +1312,9 @@ export function RetentionWorkspace() {
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium">Creator DNA</p>
                   <span className="rounded-full bg-[#79c6ff]/10 px-2 py-0.5 font-mono text-[10px] text-[#8ed0ff]">
-                    {creatorMemory.length} local projects
+                    {creatorMemory.length} projects ·{' '}
+                    {recommendationFeedback.length}{' '}
+                    {recommendationFeedback.length === 1 ? 'rating' : 'ratings'}
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -1515,15 +1729,56 @@ function parseCreatorMemory(text: string): CreatorMemoryEntry[] {
         typeof candidate.strongestTime === 'number' &&
         Number.isFinite(candidate.strongestTime) &&
         typeof candidate.strongestDelta === 'number' &&
-        Number.isFinite(candidate.strongestDelta)
+        Number.isFinite(candidate.strongestDelta) &&
+        (candidate.profile === undefined || isContentProfile(candidate.profile))
       );
     })
     .slice(0, 12);
 }
 
-function summarizeCreatorMemory(entries: CreatorMemoryEntry[]): string {
-  if (!entries.length)
-    return 'Analyze real projects to reveal recurring early losses and replay-worthy moments.';
+function parseRecommendationFeedback(text: string): RecommendationFeedback[] {
+  const parsed: unknown = JSON.parse(text);
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((item): item is RecommendationFeedback => {
+      if (!item || typeof item !== 'object') return false;
+      const candidate = item as Partial<RecommendationFeedback>;
+      return (
+        typeof candidate.key === 'string' &&
+        isContentProfile(candidate.profile) &&
+        (candidate.verdict === 'accepted' ||
+          candidate.verdict === 'rejected') &&
+        typeof candidate.recordedAt === 'string'
+      );
+    })
+    .slice(0, 60);
+}
+
+function feedbackPreference(
+  entries: RecommendationFeedback[],
+  profile: ContentProfile,
+): FeedbackPreference {
+  const matching = entries.filter((entry) => entry.profile === profile);
+  if (!matching.length) return 'neutral';
+  const accepted = matching.filter(
+    (entry) => entry.verdict === 'accepted',
+  ).length;
+  return accepted >= matching.length - accepted
+    ? 'edit-friendly'
+    : 'review-first';
+}
+
+function summarizeCreatorMemory(
+  entries: CreatorMemoryEntry[],
+  feedback: RecommendationFeedback[],
+): string {
+  if (!entries.length && !feedback.length)
+    return 'Analyze real projects and rate recommendations to build a private, format-aware editing pattern.';
+  const reviewFirstProfiles = CONTENT_PROFILES.filter(
+    ({ value }) => feedbackPreference(feedback, value) === 'review-first',
+  ).map(({ label }) => label.toLowerCase());
+  if (!entries.length && reviewFirstProfiles.length)
+    return `Your feedback favors review-first suggestions for ${reviewFirstProfiles.join(', ')} content.`;
   const earlyLosses = entries.filter(
     (entry) =>
       entry.strongestType === 'dip' &&
@@ -1532,11 +1787,22 @@ function summarizeCreatorMemory(entries: CreatorMemoryEntry[]): string {
   const replayWins = entries.filter(
     (entry) => entry.strongestType === 'spike',
   ).length;
+  const leadingProfile = entries.reduce<ContentProfile | undefined>(
+    (best, entry) => best ?? entry.profile,
+    undefined,
+  );
+  const formatContext = leadingProfile
+    ? ` across ${contentProfileLabel(leadingProfile).toLowerCase()} projects`
+    : '';
   if (earlyLosses > replayWins)
-    return `${earlyLosses} of ${entries.length} projects show their strongest loss early. Test faster proof before adding more context.`;
+    return `${earlyLosses} of ${entries.length} projects${formatContext} show their strongest loss early. Test faster proof before adding more context.`;
   if (replayWins)
-    return `${replayWins} of ${entries.length} projects contain a dominant replay moment worth testing as an opening teaser.`;
+    return `${replayWins} of ${entries.length} projects${formatContext} contain a dominant replay moment worth testing as an opening teaser.`;
   return `${entries.length} projects observed. Add more uploads before treating any pattern as recurring.`;
+}
+
+function isContentProfile(value: unknown): value is ContentProfile {
+  return CONTENT_PROFILES.some((profile) => profile.value === value);
 }
 
 declare global {

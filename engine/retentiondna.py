@@ -20,7 +20,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 from typing import Iterable
 
 
@@ -37,6 +37,9 @@ class Signal:
     delta: float
     retention: float
     severity: str
+    profile: str = "general"
+    moment_role: str = "transition"
+    threshold: float = 7.0
 
 
 @dataclass(frozen=True)
@@ -92,13 +95,23 @@ def load_retention(path: Path, duration: float | None = None) -> list[Point]:
     return points
 
 
-def detect_signals(points: list[Point]) -> list[Signal]:
+CONTENT_PROFILES = ("general", "tutorial", "documentary", "podcast", "short", "gaming", "music")
+
+
+def detect_signals(points: list[Point], profile: str = "general") -> list[Signal]:
+    if profile not in CONTENT_PROFILES:
+        raise ValueError(f"unsupported content profile: {profile}")
     candidates: list[Signal] = []
+    changes: list[tuple[int, float]] = []
     for index in range(2, len(points) - 1):
         before = mean(point.retention for point in points[max(0, index - 2):index])
         after = mean(point.retention for point in points[index:min(len(points), index + 2)])
         delta = round(after - before, 1)
-        if delta <= -7 or delta >= 7:
+        changes.append((index, delta))
+    threshold = adaptive_signal_threshold([delta for _, delta in changes], profile)
+    duration = max(points[-1].time, 0.1) if points else 0.1
+    for index, delta in changes:
+        if delta <= -threshold or delta >= threshold:
             candidates.append(
                 Signal(
                     kind="dip" if delta < 0 else "spike",
@@ -106,6 +119,9 @@ def detect_signals(points: list[Point]) -> list[Signal]:
                     delta=delta,
                     retention=points[index].retention,
                     severity="high" if abs(delta) >= 13 else "medium",
+                    profile=profile,
+                    moment_role=classify_moment(points[index].time, duration, profile),
+                    threshold=threshold,
                 )
             )
 
@@ -115,6 +131,43 @@ def detect_signals(points: list[Point]) -> list[Signal]:
         if all(abs(existing.time - signal.time) >= 10 for existing in deduped):
             deduped.append(signal)
     return sorted(deduped[:6], key=lambda signal: signal.time)
+
+
+def adaptive_signal_threshold(changes: list[float], profile: str = "general") -> float:
+    floors = {
+        "general": 6.0,
+        "tutorial": 6.0,
+        "documentary": 5.5,
+        "podcast": 5.5,
+        "short": 4.0,
+        "gaming": 6.0,
+        "music": 5.0,
+    }
+    if profile not in floors:
+        raise ValueError(f"unsupported content profile: {profile}")
+    magnitudes = [abs(change) for change in changes]
+    if not magnitudes:
+        return floors[profile]
+    center = median(magnitudes)
+    deviation = median(abs(magnitude - center) for magnitude in magnitudes)
+    return round(max(floors[profile], min(10.0, center + deviation * 1.5)), 1)
+
+
+def classify_moment(time: float, duration: float, profile: str) -> str:
+    progress = time / max(duration, 0.1)
+    if progress <= 0.08:
+        return "hook"
+    if progress <= 0.2:
+        return "setup"
+    if profile == "tutorial":
+        return "demonstration"
+    if profile == "podcast":
+        return "discussion"
+    if profile == "gaming":
+        return "gameplay"
+    if profile == "music":
+        return "performance"
+    return "payoff" if progress >= 0.75 else "transition"
 
 
 def detect_silences(video: Path, noise: str = "-38dB", minimum_duration: float = 0.8) -> list[Silence]:
@@ -207,6 +260,7 @@ def build_plan(
     transcript_path: Path | None,
     silences: list[Silence] | None = None,
     scene_changes: list[float] | None = None,
+    profile: str = "general",
 ) -> dict:
     video_duration = probe_duration(video)
     transcript = []
@@ -230,7 +284,7 @@ def build_plan(
         confidence = min(0.98, 0.58 + min(abs(signal.delta), 20) / 100 + (0.12 if nearby else 0) + (0.12 if nearby_silences else 0))
         if signal == primary_signal:
             if signal.kind == "dip":
-                start, end, reason = recommend_removal(signal, nearby, silences, video_duration)
+                start, end, reason = recommend_removal(signal, nearby, silences, video_duration, profile)
                 action = "remove"
             else:
                 maximum_teaser = min(8.0, max(1.0, video_duration * 0.15))
@@ -263,6 +317,8 @@ def build_plan(
         "source": source_identity(video, video_duration),
         "analysis": {
             "retentionPoints": len(points),
+            "contentProfile": profile,
+            "adaptiveThreshold": signals[0].threshold if signals else adaptive_signal_threshold([], profile),
             "silencesDetected": len(silences),
             "sceneChangesDetected": len(scene_changes),
             "transcriptSegments": len(features),
@@ -278,6 +334,7 @@ def recommend_removal(
     nearby_transcript: list[dict],
     silences: list[Silence],
     duration: float,
+    profile: str = "general",
 ) -> tuple[float, float, str]:
     window_start, window_end = max(0.0, signal.time - 20.0), signal.time + 3.0
     nearby_silence = max(
@@ -306,7 +363,16 @@ def recommend_removal(
         return start, end, "tighten the transcript segment aligned to the strongest retention decline"
     start = max(0.0, signal.time - 18.0)
     start, end = bounded_interval(start, max(start + 2.0, signal.time - 2.0), duration)
-    return start, end, "tighten the window before the strongest measured retention decline"
+    profile_reason = {
+        "general": "tighten the window before the strongest measured retention decline",
+        "tutorial": "move the next demonstration closer and shorten delayed setup",
+        "documentary": "shorten redundant orientation while preserving narrative context",
+        "podcast": "tighten repeated framing or dead air while preserving the argument",
+        "short": "compress the beat before the measured swipe-away point",
+        "gaming": "trim non-decision downtime while preserving strategic context",
+        "music": "review the musical transition and only shorten non-performance framing",
+    }[profile]
+    return start, end, profile_reason
 
 
 def bounded_interval(start: float, end: float, duration: float) -> tuple[float, float]:
@@ -528,6 +594,7 @@ def main(argv: list[str] | None = None) -> int:
     analyze.add_argument("--retention", type=Path, required=True)
     analyze.add_argument("--transcript", type=Path)
     analyze.add_argument("--out", type=Path, required=True)
+    analyze.add_argument("--profile", choices=CONTENT_PROFILES, default="general")
     render_parser = subparsers.add_parser("render", help="apply validated remove and promote operations with ffmpeg")
     render_parser.add_argument("--video", type=Path, required=True)
     render_parser.add_argument("--plan", type=Path, required=True)
@@ -537,10 +604,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "analyze":
         duration = probe_duration(args.video)
         points = load_retention(args.retention, duration)
-        signals = detect_signals(points)
+        signals = detect_signals(points, args.profile)
         silences = detect_silences(args.video)
         scene_changes = detect_scene_changes(args.video)
-        plan = build_plan(args.video, points, signals, args.transcript, silences, scene_changes)
+        plan = build_plan(args.video, points, signals, args.transcript, silences, scene_changes, args.profile)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(plan, indent=2), encoding="utf-8")
         print(json.dumps({"signals": len(signals), "operations": len(plan["operations"]), "plan": str(args.out)}))

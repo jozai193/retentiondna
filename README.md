@@ -12,12 +12,14 @@ RetentionDNA turns audience-retention evidence into concrete video edits. It ali
 The hackathon demo proves one complete loop:
 
 1. Load a source video and a retention CSV or official YouTube Analytics JSON response.
-2. Detect audience-loss and replay signals deterministically.
-3. Inspect each signal on the synchronized video timeline.
-4. Stage a recommended repair and preview the cut without mutating the source.
-5. Export a source-bound edit-decision JSON with the video's SHA-256 fingerprint.
-6. Render safe removals or a replay-spike teaser into a new MP4 with the local engine.
-7. Compare a later retention curve at the same moment and build a device-local pattern history.
+2. Infer or select a content profile and calculate a curve-relative anomaly threshold.
+3. Detect audience-loss and replay signals and classify each moment's likely content role.
+4. Apply tutorial, documentary, podcast, short-form, gaming, music, or general editing policy.
+5. Inspect each signal on the synchronized video timeline.
+6. Stage a recommended repair and preview the cut without mutating the source.
+7. Export a source-bound edit-decision JSON with the video's SHA-256 fingerprint.
+8. Render safe removals or a replay-spike teaser into a new MP4 with the local engine.
+9. Compare a later retention curve, rate the recommendation, and build a device-local pattern history.
 
 The product never claims that an edit guarantees future retention. It distinguishes measured historical evidence from heuristic recommendations.
 
@@ -29,11 +31,13 @@ Browser workspace
   ├─ canonical timestamp, percentage, and ratio units
   ├─ CSV and official YouTube Analytics JSON adapters
   ├─ reducer-backed analyze / repair / error state machine
-  ├─ retention change detector
+  ├─ adaptive, rolling-baseline retention change detector
+  ├─ automatic or creator-selected content profiles
+  ├─ semantic moment classification and profile-specific editing policies
   ├─ measured / aligned / unavailable evidence provenance
   ├─ interactive synchronized timeline
   ├─ non-destructive remove and promotion previews
-  ├─ device-local Creator DNA pattern memory
+  ├─ device-local Creator DNA pattern and recommendation-feedback memory
   ├─ observed before/after retention comparison
   └─ source-bound edit-plan v2 export
                   │
@@ -62,6 +66,8 @@ npm run dev
 
 Open `http://localhost:3000`. A verified public YouTube case backed by official ACAU open data is ready immediately. Use **Synthetic fixture** to exercise the deterministic editing pipeline or **Upload project** with your own local video and retention file.
 
+The content selector supports **Auto**, General, Tutorial, Documentary, Podcast / interview, Short-form, Gaming, and Music / performance. Auto uses duration, filename, and any supplied transcript. The selected policy changes the anomaly floor, semantic interpretation, editing rule, and proposed repair while preserving the measured curve.
+
 Supported CSV headers:
 
 - `time` or `timestamp`, expressed as seconds or `MM:SS`
@@ -79,6 +85,7 @@ python -B engine/retentiondna.py analyze `
   --video public/demo/retentiondna-sample.mp4 `
   --retention public/demo/retention.csv `
   --transcript public/demo/transcript.json `
+  --profile tutorial `
   --out artifacts/sample-plan.json
 
 python -B engine/retentiondna.py render `
@@ -118,10 +125,10 @@ See [VALIDATION.md](VALIDATION.md) for the official ACAU open-data case, real Yo
 
 - **M1 — Working surface:** responsive forensic editing workspace, real public case, sample timeline, and evidence panel.
 - **M2 — Real input:** local video upload, CSV parsing, normalized YouTube ratio support, error states.
-- **M3 — Analysis:** dip/spike detection, confidence/severity, synchronized inspection.
+- **M3 — Analysis:** adaptive dip/spike detection, content profiles, semantic moment roles, confidence/severity, and synchronized inspection.
 - **M4 — Repair:** non-destructive cut preview, edit-plan export, deterministic FFmpeg renderer.
 - **M5 — Submission:** deploy the interactive sample, record a concise before/after demo, publish repository and Devpost story.
-- **M6 — Trust and learning:** source-bound plans, evidence provenance, real spike promotion, observed outcome comparison, and device-local cross-project patterns.
+- **M6 — Trust and learning:** source-bound plans, evidence provenance, real spike promotion, observed outcome comparison, accept/reject learning, and device-local format-aware patterns.
 
 ## Honest MVP boundaries
 
@@ -129,3 +136,4 @@ See [VALIDATION.md](VALIDATION.md) for the official ACAU open-data case, real Yo
 - The web preview and renderer support safe remove edits and one bounded replay-spike teaser. The source remains unchanged.
 - The official YouTube Analytics response adapter is implemented and tested. OAuth consent and live channel retrieval remain pending until a channel owner can authorize access; CSV import keeps the core demo reliable in the meantime.
 - Creator DNA stores only small analysis summaries in the current browser's local storage. It never stores video or transcript content.
+- Content-profile inference and semantic roles are deterministic heuristics, not trained genre labels. The creator can override the profile and reject a recommendation; rejected formats switch to review-first copy on that device.

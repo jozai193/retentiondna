@@ -14,9 +14,9 @@
 
 ## 00:27–00:40 — Honest evidence boundaries
 
-**On screen:** Show the measured retention card, unavailable transcript/visual cards, and recommendation-only notice.
+**On screen:** Show **Auto · Documentary**, the adaptive gate, Hook moment label, measured retention card, unavailable transcript/visual cards, and recommendation-only notice. Switch the profile to **Tutorial** and show the recommendation change, then return to Auto.
 
-**Voiceover:** “The curve is measured. Transcript and scene evidence are explicitly unavailable, and this public case stays recommendation-only because we do not own its source video.”
+**Voiceover:** “Auto recognizes this as documentary content. The curve is measured, while missing evidence stays unavailable. Changing the format changes the interpretation—not the underlying audience data.”
 
 ## 00:40–00:55 — Private creator input
 
@@ -29,6 +29,10 @@
 **On screen:** Click **Synthetic fixture**, select the 00:25 dip, and point to the learned rule and repair.
 
 **Voiceover:** “RetentionDNA separates measured history from its recommendation. It explains the editing rule, proposes a bounded cut, and never promises that retention will improve.”
+
+**On screen:** Click **Not right** and show the recommendation switch to **Review before trimming**.
+
+**Voiceover:** “Rejecting advice immediately makes that content format review-first on this device.”
 
 ## 01:08–01:23 — Before and after
 

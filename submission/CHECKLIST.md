@@ -5,6 +5,9 @@
 - [x] End-to-end browser workflow works with built-in sample.
 - [x] Real CSV parsing and signal detection.
 - [x] Public ACAU YouTube case aligned with 100 official open-data retention points.
+- [x] Auto and creator-selected policies for seven content formats.
+- [x] Curve-relative anomaly threshold and semantic moment classification.
+- [x] Device-local recommendation feedback changes later guidance.
 - [x] ACAU dataset schema supported in browser and Python runtimes.
 - [x] Audio silence, scene-change, and transcript evidence in local engine.
 - [x] Non-destructive better-cut preview.

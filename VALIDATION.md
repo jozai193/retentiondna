@@ -8,7 +8,7 @@ The default workspace pairs a currently public [ACAU YouTube video](https://www.
 
 RetentionDNA loads the published curve rather than fabricating values. It marks retention as measured while correctly leaving transcript and automated visual evidence unavailable. Because the project does not own the source video, the public case offers recommendation and timestamp review only; preview, plan export, and rendering require a rights-cleared upload.
 
-The dataset's native `position_seconds`/`position_ratio`/`position_percentage` and `audience_ratio`/`audience_percentage` columns are supported by both the browser and Python parsers and covered by the shared fixtures.
+The dataset's native `position_seconds`/`position_ratio`/`position_percentage` and `audience_ratio`/`audience_percentage` columns are supported by both the browser and Python parsers and covered by the shared fixtures. The live case also exercises documentary-specific policy and a curve-relative anomaly gate.
 
 ## 2. Real viewer-behavior curve benchmark
 
@@ -61,6 +61,8 @@ The hosted workspace can also import a saved official `reports.query` JSON respo
 
 The browser and Python engine run the same fixtures from `fixtures/golden-retention-cases.json`. These cases distinguish explicit percentages, generic decimal ratios, official YouTube ratio headers, and short second-based timelines. Edit plans use the versioned schema in `contracts/retentiondna.edit-plan.v2.schema.json` and bind to the exact source by size, duration, and SHA-256.
 
+Additional tests verify that shallow curve noise is ignored, format inference is duration-aware, transcript language produces semantic moment roles, the same measured curve yields different tutorial and documentary guidance, and negative creator feedback switches that format to review-first recommendations.
+
 ## Claims we can and cannot make
 
 | Claim                                                           | Current evidence                                                    |
@@ -71,4 +73,6 @@ The browser and Python engine run the same fixtures from `fixtures/golden-retent
 | The media pipeline handles real spoken/visual footage           | Narrated product walkthrough audit                                  |
 | Deterministic cuts and teaser promotions obey safety limits     | FFmpeg integration and source-identity tests                        |
 | Browser and engine agree on retention units                     | Shared golden fixture corpus                                        |
+| Recommendations change by content format                        | Profile-policy contract tests and interactive selector              |
+| Rejected recommendations influence later guidance               | Device-local feedback test and review-first policy                  |
 | A recommendation improves a creator's future audience retention | Requires creator-owned A/B or before/after uploads; not yet claimed |

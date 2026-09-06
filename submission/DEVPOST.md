@@ -14,9 +14,9 @@ Creator tools are good at generating more content, but weak at learning from wha
 
 ## What it does
 
-RetentionDNA accepts a draft video, an audience-retention CSV or official YouTube Analytics JSON response, and an optional timestamped transcript. It detects meaningful dips and spikes, synchronizes each signal to the source timeline, and labels every evidence channel as measured, aligned, or unavailable. Its local analysis engine also measures silence, scene transitions, speech pace, filler words, and repetition.
+RetentionDNA accepts a draft video, an audience-retention CSV or official YouTube Analytics JSON response, and an optional timestamped transcript. It automatically infers—or lets the creator select—the content format, calculates a curve-relative anomaly gate, detects meaningful dips and spikes, and classifies the nearby moment as a hook, setup, explanation, demonstration, payoff, transition, discussion, gameplay, or performance. Its guidance then adapts for tutorials, documentaries, podcasts, Shorts, gaming, music, or general content.
 
-For an audience-loss signal, RetentionDNA proposes a bounded removal; for a replay spike, it can prepend a short teaser from the replayed moment. The creator can preview the better cut without changing the source, compare a later curve at the same timestamp, export a source-bound JSON edit plan, and render a new MP4 with a deterministic FFmpeg pipeline.
+For an audience-loss signal, RetentionDNA proposes a bounded, format-aware test; for a replay spike, it can prepend a short teaser from the replayed moment. The creator can preview the better cut without changing the source, rate whether the recommendation fits, compare a later curve at the same timestamp, export a source-bound JSON edit plan, and render a new MP4 with a deterministic FFmpeg pipeline. Rejected recommendations make that content profile review-first on the current device.
 
 The live workspace opens with a real public YouTube case from ACAU, Uruguay's national film and audiovisual agency. Its 100-point curve comes from ACAU's official open-data export of YouTube Analytics measurements. RetentionDNA identifies the strongest local loss at 01:18 and opens the real video at that moment. It marks the curve as measured while leaving transcript and scene evidence unavailable, because those were not supplied.
 
@@ -24,7 +24,7 @@ A separate, clearly labeled synthetic engineering fixture exercises the full edi
 
 ## How we built it
 
-The responsive workspace uses React 19, TypeScript, Tailwind CSS, and shadcn/ui. CSV and saved YouTube Analytics JSON analysis run entirely in the browser. A reducer prevents contradictory workflow states, and small cross-project pattern summaries form a device-local Creator DNA without storing video or transcripts. Local uploads never leave the browser.
+The responsive workspace uses React 19, TypeScript, Tailwind CSS, and shadcn/ui. CSV and saved YouTube Analytics JSON analysis run entirely in the browser. Robust curve statistics set an adaptive threshold instead of treating every format identically. Deterministic keyword, duration, and timeline rules infer content and moment roles. A reducer prevents contradictory workflow states, and device-local Creator DNA stores only small project summaries and recommendation ratings—never videos or transcripts.
 
 The evidence engine uses Python's standard library, FFprobe, and FFmpeg. `silencedetect` finds audio gaps; scene scores locate visual transitions; timestamped transcript features expose pace, filler, and repeated language. A deterministic renderer validates numeric intervals, verifies the selected source's size, duration, and SHA-256, rejects unknown actions, merges overlaps, renders removals or one bounded teaser, and refuses plans that remove more than 35% of a source.
 
@@ -40,6 +40,8 @@ Rendering safely was another challenge. Instead of letting generated text become
 
 - A complete analyze → inspect → repair → compare → export → render loop.
 - A live, publicly verifiable YouTube case backed by 100 official open-data retention measurements.
+- Seven content policies, adaptive anomaly detection, semantic moment labels, and creator-overridable auto detection.
+- A feedback loop that visibly changes future recommendations without uploading creator data.
 - Multimodal alignment that can be independently checked against the synthetic sample media.
 - Privacy-first browser analysis and local rendering with no mandatory cloud account.
 - Safety boundaries that preserve the source and reject destructive, unsupported, or wrong-source plans.

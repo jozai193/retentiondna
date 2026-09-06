@@ -3,7 +3,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   createEditDecisionList,
+  adaptiveSignalThreshold,
+  classifyMoment,
   detectRetentionSignals,
+  inferContentProfile,
   parseRetentionCsv,
   parseYouTubeAnalyticsReport,
   type SourceIdentity,
@@ -49,6 +52,62 @@ void test('public ACAU case preserves the complete published curve', () => {
   )[0];
   assert.equal(strongest.time, 78);
   assert.equal(strongest.delta, -42.5);
+});
+
+void test('content profiles infer format and classify nearby semantics', () => {
+  const transcript = [
+    { time: 20, end: 35, text: 'Click add, then build the first chart.' },
+  ];
+  assert.equal(
+    inferContentProfile({
+      sourceName: 'analytics-tutorial.mp4',
+      duration: 600,
+      transcript,
+    }),
+    'tutorial',
+  );
+  assert.equal(
+    classifyMoment(25, 600, 'tutorial', transcript),
+    'demonstration',
+  );
+  assert.equal(
+    inferContentProfile({
+      sourceName: 'vertical-tutorial-short.mp4',
+      duration: 45,
+      transcript,
+    }),
+    'short',
+  );
+});
+
+void test('adaptive thresholds ignore shallow noise', () => {
+  const points = [100, 99, 98, 99, 98, 97, 98].map((retention, index) => ({
+    time: index * 10,
+    retention,
+  }));
+  assert.equal(adaptiveSignalThreshold(points, 'general'), 6);
+  assert.deepEqual(detectRetentionSignals(points), []);
+});
+
+void test('the same curve produces format-specific recommendations', () => {
+  const tutorial = detectRetentionSignals(ACAU_CASE.points, {
+    profile: 'tutorial',
+  })[0];
+  const documentary = detectRetentionSignals(ACAU_CASE.points, {
+    profile: 'documentary',
+  })[0];
+  assert.equal(tutorial.title, 'Learning momentum drops');
+  assert.equal(documentary.title, 'Narrative momentum drops');
+  assert.notEqual(tutorial.repair.description, documentary.repair.description);
+});
+
+void test('negative creator feedback switches a profile to review-first copy', () => {
+  const signal = detectRetentionSignals(ACAU_CASE.points, {
+    profile: 'music',
+    feedbackPreference: 'review-first',
+  })[0];
+  assert.equal(signal.repair.label, 'Review before trimming');
+  assert.match(signal.repair.description, /feedback favors review-first/);
 });
 
 void test('official YouTube Analytics JSON preserves replay ratios above one', () => {

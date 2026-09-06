@@ -2,7 +2,7 @@ Creators already know where viewers leave. The hard part is understanding why, a
 
 The workspace opens with a real public YouTube case from ACAU, Uruguay's national film and audiovisual agency, paired with one hundred retention measurements from its official open-data catalog. RetentionDNA finds the strongest local loss at one minute eighteen and opens the real video at that exact moment.
 
-The interface keeps the evidence boundary honest. The public retention curve is measured, while transcript and automated visual evidence are marked unavailable. Because we do not own that source video, the case remains recommendation-only. Previewing, exporting, or rendering an edit requires a rights-cleared upload.
+Auto recognizes the case as documentary content, calculates a curve-relative anomaly gate, and labels the moment's likely role. Switching to tutorial changes the interpretation and editing policy without changing the measured curve. Missing transcript and visual evidence remain explicitly unavailable. Because we do not own that source video, the case stays recommendation-only.
 
 The creator input is deliberately simple: a draft video, its audience-retention CSV or saved YouTube Analytics response, and an optional timestamped transcript. Files remain in the browser. A separate synthetic engineering fixture keeps the editing demonstration completely reproducible.
 
@@ -15,3 +15,5 @@ The recommended repair is bounded and inspectable. Creating the better cut switc
 Finally, the creator exports an auditable edit plan with timestamps, reasons, and evidence references. The plan is bound to the exact source by size, duration, and SHA-256. A deterministic local FFmpeg renderer rejects unknown actions, the wrong source, and any plan that removes more than thirty-five percent. Generated text is never executed as a shell command.
 
 After publishing, a later curve can be compared at the same timestamp. Creator DNA keeps only small pattern summaries on this device—not videos or transcripts. RetentionDNA is a working creator workflow: analyze, inspect, repair, compare, export, and render, with every recommendation under the creator's control.
+
+The creator can also rate each recommendation. Rejecting one immediately makes that content profile review-first on this device, while an observed before-and-after curve is still labeled as comparison—not proof that the edit caused the change.

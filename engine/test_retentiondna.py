@@ -7,6 +7,8 @@ from pathlib import Path
 
 from retentiondna import (
     Point,
+    adaptive_signal_threshold,
+    classify_moment,
     detect_signals,
     detect_silences,
     load_retention,
@@ -28,6 +30,15 @@ class RetentionDnaTests(unittest.TestCase):
         points = [Point(index * 5, value) for index, value in enumerate([100, 98, 96, 94, 91, 70, 55, 54, 53])]
         signals = detect_signals(points)
         self.assertTrue(any(signal.kind == "dip" and signal.delta <= -7 for signal in signals))
+
+    def test_adaptive_profile_thresholds_ignore_shallow_noise(self):
+        self.assertEqual(adaptive_signal_threshold([1, -1.5, 0.5], "general"), 6.0)
+        points = [Point(index * 10, value) for index, value in enumerate([100, 99, 98, 99, 98, 97, 98])]
+        self.assertEqual(detect_signals(points), [])
+
+    def test_content_profile_changes_semantic_role(self):
+        self.assertEqual(classify_moment(300, 600, "tutorial"), "demonstration")
+        self.assertEqual(classify_moment(300, 600, "podcast"), "discussion")
 
     def test_parses_youtube_normalized_ratios(self):
         csv_path = Path(__file__).parent / "fixtures" / "normalized-retention.csv"
